@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdmovie"
+version = "0.2.0"
+description = "Compose multi-panel movies of molecular dynamics simulations"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5",
+    "MDAnalysis>=2.7",
+    "matplotlib>=3.7",
+    "numpy>=1.24",
+    "pillow>=10",
+    "imageio>=2.31",
+    "imageio-ffmpeg>=0.4.9",
+    "SciencePlots>=2.1",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-qt", "MDAnalysisTests"]
+
+[project.scripts]
+mdmovie = "mdmovie.app:main"
+
+[tool.setuptools.packages.find]
+include = ["mdmovie*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
