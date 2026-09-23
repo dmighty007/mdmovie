@@ -17,9 +17,10 @@ The tutorial uses the adenylate kinase (AdK) trajectory that ships with **MDAnal
 7. [Add an RMSD plot](#7-add-an-rmsd-plot)
 8. [Let one panel play on its own clock](#8-let-one-panel-play-on-its-own-clock)
 9. [Add a time label](#9-add-a-time-label)
-10. [Export the movie](#10-export-the-movie)
-11. [Write your own analysis preset](#11-write-your-own-analysis-preset)
-12. [Troubleshooting](#12-troubleshooting)
+10. [Show a trajectory on a free-energy surface](#10-show-a-trajectory-on-a-free-energy-surface)
+11. [Export the movie](#11-export-the-movie)
+12. [Write your own analysis preset](#12-write-your-own-analysis-preset)
+13. [Troubleshooting](#13-troubleshooting)
 
 > **Shortcut:** *File › Open demo project* builds the finished project in one click. Open it to see where you are heading, then come back and build it yourself.
 
@@ -174,11 +175,31 @@ Press **OK**. The analysis runs in the background; there is a progress bar in th
 
 The second plot in the example (bottom right) holds **two presets**: *Radius of gyration* on the left axis and *End-to-end distance* on the right axis (choose *Y axis: right* in the series dialog).
 
+### Styles and fine-tuning
+
+Every plot, heatmap and CV map has a **Plot style**. The *science*, *nature*, *ieee* and *notebook* styles come from the [SciencePlots](https://github.com/garrettj403/SciencePlots) package; *bmh*, *ggplot*, *seaborn* and others come with matplotlib. Combine a style with a **Colour palette** (*bright*, *vibrant*, *high-vis*, colourblind-safe sets, …). *clean* is the app's own look.
+
+![The same plot in six styles](images/plot_styles.png)
+
+| Setting | Where | What it does |
+|---|---|---|
+| Plot style, colour palette, background (light/dark) | *Style* | the overall look |
+| Font size, font family | *Style* | sizes are in points at the output resolution |
+| LaTeX text | *Style* | real LaTeX typesetting of labels (needs LaTeX installed; the first draw takes a few seconds, later frames are as fast as usual) |
+| Tick direction, minor ticks, frame (box / left + bottom / none), grid and its opacity | *Axes* | axis furniture |
+| X/Y limits, right-axis limits, log or symlog y | *Axes* | blank limits mean automatic |
+| Reference lines at y = …, marks at time = … | *Reference lines* | e.g. a threshold at `2.0`, or the moment a ligand leaves |
+| Legend position (incl. outside the plot), frame, columns | *Legend* | |
+| Cursor style, where the live value sits, faint-curve opacity | *Animation* | |
+
+Each **series** also has its own look, set in the series dialog: **line style** (solid, dashed, dotted, dash-dot, none), **markers**, **line width**, **opacity**, and **shade the area under the curve**. In *reveal* mode the shaded area grows along with the line.
+
 **Available presets:**
 - **Structure**: RMSD, radius of gyration, RMSF per residue, end-to-end distance
 - **Geometry**: distance between selections (centre of mass / centre of geometry / minimum), dihedral angles (φ ψ ω χ1), atoms within a cutoff
 - **Interactions**: hydrogen bonds, native contacts (Q)
 - **Secondary structure**: DSSP (use a **heatmap panel**), secondary-structure fractions
+- **Data files**: *Data file (COLVAR / xvg / csv)* reads PLUMED COLVAR files, GROMACS `.xvg` files (energies, temperatures, …) or any CSV/whitespace table. It needs **no trajectory**: in the series dialog the trajectory is set to *(none)*. Column names come from the file's header (`#! FIELDS`, xvg legends or a CSV header row).
 - **Custom**: *Custom expression*, any Python expression evaluated each frame. For example, `u.select_atoms('resid 50').center_of_mass()[2]` or `[ts.dimensions[0], ts.dimensions[2]]` for two columns.
 
 ---
@@ -232,7 +253,56 @@ Plain text works too, for titles, labels such as "WT" / "Mutant", or a reference
 
 ---
 
-## 10. Export the movie
+## 10. Show a trajectory on a free-energy surface
+
+Free-energy surfaces are usually made once from a long simulation or from enhanced sampling (metadynamics, umbrella sampling, …) and saved as a picture. The app can play a trajectory **on top of that picture**: a point marks the current CV values, with a fading trail behind it, synced to the rest of the movie.
+
+![A trajectory moving over a free-energy surface](images/fes_demo.gif)
+
+*The example uses a toy two-basin COLVAR. `mdmovie.demo.write_toy_colvar("COLVAR")` writes one, so you can try this without your own data.*
+
+### A. On your own pre-rendered FES picture
+
+1. **Add an image panel** and point it at the FES picture: the second button next to *Source* picks a **single image file** instead of a folder. A single picture is treated as a static background, so the data sets the timing.
+2. **Add the data.** In *Overlay data*, press **Add** and pick your CVs: *Data file (COLVAR / xvg / csv)* for a PLUMED COLVAR, or any trajectory preset (e.g. two *Dihedral angle* series for a Ramachandran-style map). The note below the list names the available columns; *X data* and *Y data: column #* choose which two are used.
+3. **Calibrate** so the app knows where the plot axes sit inside the picture. Press **Calibrate data overlay…**:
+
+![Calibrating the overlay](images/12_calibrate.png)
+
+   Drag the box exactly over the **inside of the picture's axes**. Then type the axis values at the four edges, read off the picture's tick labels. Your data is drawn as red dots **while you calibrate**, so a correct calibration is obvious: the dots sit in the low-energy basins. If the picture was made from the same data, **Use data range** fills in the values.
+4. Style the point and trail under **Data overlay**:
+
+| Setting | Options |
+|---|---|
+| Current point | circle, square, diamond, triangle, star or cross; size, colour, outline |
+| Trail | *fading line*, *line*, *fading dots* or *none*; length (in data points, 0 = everything so far), colour, width |
+| Whole path | a faint line along the full trajectory, with its own colour and opacity |
+| Clip to the plot area | keeps the trail from spilling over the picture's axes and colour bar |
+
+Crop and fit keep working: the overlay follows the picture when you crop it.
+
+### B. Computed from the data: the CV map panel
+
+If you don't have a picture, **Add › CV map panel** (or *CV map* in the toolbar) computes the surface itself from the same x/y data:
+
+![CV map panel](images/11_cvmap.png)
+
+- **①** **Data**: two series, or one series with two columns. The note lists the columns and which ones are x and y.
+- **②** **Background**:
+  - *free energy*: F = −kT ln P(x, y), from a 2-D histogram. You set the bins, **smoothing** (Gaussian, in bins), temperature, unit (kJ/mol, kcal/mol, kT), an optional cap, colormap and contour lines.
+  - *density*: the probability density itself.
+  - *image file*: any picture stretched over given x/y limits.
+  - *none*.
+
+The point, trail and whole-path settings are the same as for the overlay, and every plot style from step 7 applies. Here both panels sit side by side and stay in sync:
+
+![Pre-rendered FES with overlay (left) and a CV map computed from the run (right)](images/13_fes_result.png)
+
+> A surface computed from a short run is noisy. Raise **Smoothing**, lower **Histogram bins**, or better, use the pre-rendered surface from your long or biased simulation (A) and animate the short run on top of it.
+
+---
+
+## 11. Export the movie
 
 Press <kbd>Space</kbd> to play the preview, then **File › Export movie…** (<kbd>Ctrl+E</kbd>):
 
@@ -257,7 +327,7 @@ mdmovie render my.mdmovie.json movie.gif --scale 0.5 --gif-step 2
 
 ---
 
-## 11. Write your own analysis preset
+## 12. Write your own analysis preset
 
 Any Python file you place in `~/.config/mdmovie/presets/` (for all projects) or `<project folder>/presets/` (for one project) is loaded at start-up. After editing a file, choose **Analysis › Reload preset files**. This is a complete preset:
 
@@ -291,7 +361,7 @@ This file is in [`examples/presets/salt_bridge.py`](../examples/presets/salt_bri
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Problem | Fix |
 |---|---|
@@ -301,6 +371,8 @@ This file is in [`examples/presets/salt_bridge.py`](../examples/presets/salt_bri
 | A plot says *Error: … matched no atoms* | Fix the selection in the series dialog (double-click the series). The analysis re-runs automatically. |
 | A plot never finishes | Long trajectories take time; the status bar shows progress. Use the frame *step* in the series dialog to analyse every *n*-th frame. |
 | The analysis result looks stale after changing the trajectory | Results are cached by file name *and* modification time, so a changed file is recomputed. To force it, select the series and press **Recompute**. |
+| Overlay dots miss the basins | Re-open **Calibrate data overlay…**: the box must cover exactly the inside of the axes, and the edge values must match the tick labels. Check *X/Y data: column #* too. |
+| CV map shows only a few blobs | Too few data points for the chosen bins: raise **Smoothing** or lower **Histogram bins**. |
 | Preview stutters while playing | The export is unaffected (it renders every frame). Make the window smaller, or set the canvas to a lower resolution while editing. |
 | Text looks tiny or huge | Font sizes are in pixels *at the output resolution*. Doubling the resolution doesn't shrink the text relative to the frame. |
 

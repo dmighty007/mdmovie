@@ -379,7 +379,113 @@ def main():
 
     sync_diagram()
     timing_diagram()
+    style_grid(win.project, tid["rmsd"])
+    fes_section(win, work, tid)
     win.analysis.shutdown()
+
+
+def style_grid(project, pid):
+    """The same plot in six styles (SciencePlots and friends)."""
+    panel = project.panels[pid]
+    saved = dict(panel.props)
+    tiles, labels = [], []
+    for style, palette in (("clean", "style default"), ("science", "style default"), ("science + grid", "bright"),
+                           ("nature", "vibrant"), ("ieee", "style default"), ("notebook", "high-vis")):
+        panel.props.update(style=style, palette=palette, title="", show_value=False, theme="light")
+        panel._renderer_key = None
+        img = QImage(420, 250, QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(QColor("white"))
+        p = QPainter(img)
+        from mdmovie.panels.base import RenderContext
+        panel.render(p, QRectF(0, 0, 420, 250), RenderContext(project, 70, project.group_time(panel.group, 70), 0.8))
+        p.end()
+        tiles.append(img)
+        labels.append(f"{style}" + (f"  ·  {palette}" if palette != "style default" else ""))
+    panel.props.clear()
+    panel.props.update(saved)
+    panel._renderer_key = None
+    rows = [side_by_side(tiles[i:i + 3], labels[i:i + 3]) for i in (0, 3)]
+    out = QImage(rows[0].width(), rows[0].height() * 2 + 10, QImage.Format.Format_ARGB32)
+    out.fill(QColor("white"))
+    p = QPainter(out)
+    p.drawImage(0, 0, rows[0])
+    p.drawImage(0, rows[0].height() + 10, rows[1])
+    p.end()
+    save(out, "plot_styles.png")
+
+
+def fes_section(win, work, tid):
+    """Scatter on a pre-rendered FES (image overlay) and a live CV map."""
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    from mdmovie.panels.cvmap_panel import free_energy
+    from mdmovie.panels.mpl_common import styled
+    from mdmovie.ui.calibrate_dialog import CalibrateDialog
+
+    from mdmovie.demo import write_toy_colvar
+    from mdmovie.sources.datafile import read_table
+    csv = write_toy_colvar(os.path.join(work, "COLVAR"))                            # the run we animate
+    long_run, _ = read_table(write_toy_colvar(os.path.join(work, "COLVAR.long"), n=40000, seed=11))
+
+    # a "pre-rendered" FES figure, as you might have made it for a paper (from a long run)
+    x, y = long_run[:, 1], long_run[:, 2]
+    rng2 = [[-2.0, 2.0], [-2.2, 2.2]]
+    with styled({"style": "science", "font_size": 11}), matplotlib.rc_context({"savefig.bbox": "standard"}):
+        fig = Figure(figsize=(5.2, 4), dpi=200)
+        FigureCanvasAgg(fig)
+        ax = fig.add_axes((0.14, 0.14, 0.64, 0.8))
+        f, xe, ye = free_energy(x, y, 50, 300, "kJ/mol", rng2)
+        f = np.minimum(f, 14)
+        cs = ax.contourf(0.5 * (xe[1:] + xe[:-1]), 0.5 * (ye[1:] + ye[:-1]), f, levels=14, cmap="magma")
+        ax.contour(0.5 * (xe[1:] + xe[:-1]), 0.5 * (ye[1:] + ye[:-1]), f, levels=7, colors="white",
+                   linewidths=0.4, alpha=0.5)
+        ax.set_xlim(*rng2[0])
+        ax.set_ylim(*rng2[1])
+        ax.set_xlabel("CV 1")
+        ax.set_ylabel("CV 2")
+        cb = fig.colorbar(cs, cax=fig.add_axes((0.82, 0.14, 0.035, 0.8)))
+        cb.set_label("Free energy (kJ/mol)")
+        fes_png = os.path.join(work, "fes.png")
+        fig.savefig(fes_png)
+    box = ax.get_position()   # plot area in figure fractions (y up)
+    calib = [box.x0, 1 - box.y1, box.width, box.height]
+
+    def build(p):
+        p.groups = {k: v for k, v in p.groups.items() if k == "g1"}
+        for pid in list(p.panels):
+            p.remove_panel(pid)
+        im = p.add_panel("image", "FES + trajectory")
+        im.props.update(folder=fes_png, overlay=True, calib=[round(v, 5) for v in calib], ax_xmin=-2,
+                        ax_xmax=2, ax_ymin=-2.2, ax_ymax=2.2, trail_length=30, marker_size=18,
+                        marker_color="#35d0ff", trail_color="#9be7ff")
+        im.series = [Series("", "Data file (COLVAR / xvg / csv)", {"path": csv, "columns": "1,2"})]
+        cv = p.add_panel("cvmap", "CV map")
+        cv.series = [Series("", "Data file (COLVAR / xvg / csv)", {"path": csv, "columns": "1,2"})]
+        cv.props.update(bins=28, style="science", colormap="viridis", trail_length=30, font_size=13,
+                        title="Computed from this run", fes_max=12.0, smoothing=1.2)
+        p.layout = L.Split("h", [0.5, 0.5], [L.Leaf(im.id), L.Leaf(cv.id)])
+        p.overlays = []
+        tid.update(fes_img=im.id, cvmap=cv.id)
+    win.apply("FES demo", build)
+    wait_analysis(win)
+    win.set_frame(300)
+    win.select(("panel", tid["cvmap"]))
+    pump()
+    win.canvas.render_now()
+    save(annotate(win.grab().toImage(), [(rect_of(group_box(win, "Data: x and y columns"), win), 1),
+                                         (rect_of(group_box(win, "Background"), win), 2)]), "11_cvmap.png", 1440)
+
+    im = win.project.panels[tid["fes_img"]]
+    from mdmovie.panels.series_data import xy_data
+    data = xy_data(win.project, im.series, 0, 1)
+    dlg = CalibrateDialog(fes_png, calib, (-2, 2, -2.2, 2.2), data, win)
+    save(grab_dialog(dlg, (860, 740)), "12_calibrate.png")
+    save(render_frame(win.project, 300, 0.75), "13_fes_result.png")
+    export_movie(win.project, ExportOptions(os.path.join(OUT, "fes_demo.gif"), scale=0.32, gif_step=4,
+                                            stop=320, gif_colors=96))
+    print("wrote images/fes_demo.gif")
 
 
 def _button(dlg, text) -> QRect:

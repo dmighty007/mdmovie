@@ -250,3 +250,11 @@ def test_render_context_smoke(tmp_path):
     plot.render(p, QRectF(0, 0, 300, 200), RenderContext(pr, 5, pr.group_time(plot.group, 5), 0.5))
     p.end()
     assert cell_rects(pr, 300, 200, 1.0)
+
+
+def test_property_names_are_unique_per_panel_type():
+    from mdmovie.panels import PANEL_TYPES
+    for kind, cls in PANEL_TYPES.items():
+        names = [p.name for p in cls.all_props()]
+        dupes = {n for n in names if names.count(n) > 1}
+        assert not dupes, f"{kind}: duplicate property names {dupes}"

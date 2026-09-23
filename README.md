@@ -4,6 +4,8 @@ Turn a molecular dynamics simulation into a multi-panel movie: your rendered pro
 
 ![Example movie](docs/images/demo.gif)
 
+![A trajectory on a free-energy surface](docs/images/fes_demo.gif)
+
 **→ New here? Follow the [illustrated tutorial](docs/TUTORIAL.md)**: about 15 minutes, using example data that ships with MDAnalysisTests.
 
 ![The app](docs/images/08_sync.png)
@@ -17,9 +19,11 @@ Turn a molecular dynamics simulation into a multi-panel movie: your rendered pro
   - Built in: RMSD, Rg, RMSF, distances, dihedrals, H-bonds, native contacts, DSSP, atoms within a cutoff, and custom Python expressions.
   - Several presets and trajectories can share one plot, with twin y-axes.
   - Analyses run in the background and results are cached.
-  - [Add your own presets](docs/TUTORIAL.md#11-write-your-own-analysis-preset) in a few lines.
+  - [Add your own presets](docs/TUTORIAL.md#12-write-your-own-analysis-preset) in a few lines.
 - **Synced or independent panels.** Sync groups map movie frames to simulation time. Shift, speed up, trim, hold, hide or loop each group, and drag it on the timeline.
 - **Plot animations.** Four styles: the line grows, a marker moves, the axis scrolls, or the plot stays static. A live value readout is optional.
+- **Publication styles.** [SciencePlots](https://github.com/garrettj403/SciencePlots) styles (science, nature, ieee, notebook) and colour palettes, optional LaTeX, and fine control over ticks, frame, grid, limits, log scale, reference lines and legends. Each series gets its own line style, markers, width, opacity and fill.
+- **Trajectories on free-energy surfaces.** Draw the current CV values as a moving point with a fading trail on top of a **pre-rendered FES picture** (calibrated in one dialog), or use the **CV map** panel to compute −kT ln P from the data. PLUMED COLVAR, GROMACS .xvg and CSV files load directly, no trajectory needed.
 - **Export** to MP4 (H.264), GIF or a PNG sequence from the GUI, or headless with `mdmovie render`. The preview shows exactly what gets exported.
 - Undo/redo for every edit, and projects saved as small JSON files with relative paths.
 
@@ -37,7 +41,7 @@ uv venv -p 3.14 .venv && uv pip install -p .venv/bin/python -e ".[test]"
 mdmovie/core/       sync model (timemap), layout tree, crop math, project file
 mdmovie/sources/    image sequences + LRU cache, trajectory metadata
 mdmovie/analysis/   preset registry, built-in presets, cached runner
-mdmovie/panels/     image, plot, heatmap, text
+mdmovie/panels/     image (+ data overlay), plot, heatmap, CV map, text
 mdmovie/render/     compositor (single drawing path for preview and export), exporter
 mdmovie/ui/         main window, canvas editor, inspector, timeline, dialogs
 docs/               tutorial + make_tutorial_images.py (regenerates every screenshot)

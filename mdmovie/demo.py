@@ -35,6 +35,31 @@ def render_ca_frames(u, out_dir: str, size=(900, 700), view=(45, 35)) -> int:
     return u.trajectory.n_frames
 
 
+def write_toy_colvar(path: str, n: int = 600, stride: int = 25, seed: int = 3) -> str:
+    """A PLUMED-style COLVAR of two CVs from overdamped Langevin dynamics on a 2-D double well
+    (two basins joined by a ~3 kT barrier): a stand-in for real collective-variable data."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+
+    def force(x, y):   # −∇V for V = 2.5 (x² − 1)² + 1.5 (y − 0.6 x)²
+        fx = -10 * x * (x * x - 1) + 1.8 * (y - 0.6 * x)
+        fy = -3 * (y - 0.6 * x)
+        return fx, fy
+    dt, x, y = 0.004, -1.0, -0.6
+    rows = []
+    for i in range(n * stride):
+        fx, fy = force(x, y)
+        x += fx * dt + np.sqrt(2 * dt) * rng.normal()
+        y += fy * dt + np.sqrt(2 * dt) * rng.normal()
+        if i % stride == 0:
+            rows.append((len(rows) * 10.0, x, y))   # one sample every 10 ps
+    with open(path, "w") as f:
+        f.write("#! FIELDS time cv1 cv2\n")
+        for r in rows:
+            f.write(f"{r[0]:.1f} {r[1]:.5f} {r[2]:.5f}\n")
+    return path
+
+
 def build_demo(out_dir: str) -> str:
     """Write demo images and a project file into out_dir; returns the project path."""
     import MDAnalysis as mda
