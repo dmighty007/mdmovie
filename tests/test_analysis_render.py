@@ -103,7 +103,19 @@ def test_export_mp4_and_gif(tmp_path):
     from PIL import Image
     with Image.open(gif) as im:
         assert im.n_frames == 10 and im.size == (480, 270)
+        dec = []
+        for i in (0, 1):
+            im.seek(i)
+            dec.append(np.asarray(im.convert("RGB")).astype(int))
+    src = [qimage_to_rgb(render_frame(pr, g, 0.25)).astype(int) for g in (0, 3)]
+    still = np.all(src[0] == src[1], axis=2)
+    assert still.mean() > 0.5 and np.array_equal(dec[0][still], dec[1][still])  # shared palette: no flicker
+    assert np.abs(dec[0] - src[0]).mean() < 3
     assert os.path.getsize(gif) > 0
+    fs = export_movie(pr, ExportOptions(str(tmp_path / "fs.gif"), scale=0.25, gif_step=3,
+                                        gif_dither="floyd-steinberg"))
+    with Image.open(fs) as im:
+        assert im.n_frames == 10
 
 
 def test_user_preset_folder(u):

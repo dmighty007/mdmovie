@@ -20,8 +20,19 @@ def series_results(project, series_list):
     return out
 
 
-def series_time_info(project, series_list):
-    """(first, last, dt) in ps over all series, falling back to trajectory metadata before results exist."""
+def frame_numbers(series, n: int) -> np.ndarray:
+    """Trajectory frame (or data-file row) number of each of a series' n points, from its frame slice."""
+    return float(series.start or 0) + float(series.step or 1) * np.arange(n, dtype=float)
+
+
+def series_times(series, res, frames: bool = False) -> np.ndarray:
+    """A result's time axis in ps, or its frame numbers when the panel is synced frame-wise."""
+    return frame_numbers(series, len(res.time)) if frames else np.asarray(res.time, float)
+
+
+def series_time_info(project, series_list, frames: bool = False):
+    """(first, last, dt) in ps over all series (in frame numbers if `frames`), falling back to
+    trajectory metadata before results exist."""
     lo = hi = dt = None
     for s, res, _ in series_results(project, series_list):
         t = getattr(res, "time", None)
@@ -35,6 +46,8 @@ def series_time_info(project, series_list):
                 continue
         if len(t) == 0:
             continue
+        if frames:
+            t = frame_numbers(s, len(t))
         d = float(np.median(np.diff(t))) if len(t) > 1 else 1.0
         lo = t[0] if lo is None else min(lo, t[0])
         hi = t[-1] if hi is None else max(hi, t[-1])

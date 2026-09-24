@@ -91,3 +91,22 @@ def test_canvas_context_and_drag(win, qtbot):
 def qtbot_button():
     from PySide6.QtCore import Qt
     return Qt.MouseButton.LeftButton
+
+
+def test_image_folder_asks_for_pattern(win, tmp_path, monkeypatch):
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QInputDialog
+    d = tmp_path / "jpgs"
+    d.mkdir()
+    for n in range(3):
+        img = QImage(8, 8, QImage.Format.Format_RGB32)
+        img.fill(0)
+        img.save(str(d / f"f.{n:03d}.jpg"))
+    offered = []
+    monkeypatch.setattr(QInputDialog, "getItem",
+                        lambda parent, title, label, items, current, editable: (offered.append(items), (items[current], True))[1])
+    pid = next(p for p, panel in win.project.panels.items() if panel.KIND == "image")
+    win.set_image_folder(pid, str(d))
+    assert offered == [["*.jpg"]]  # the stale default *.png matches nothing here, so it is not offered
+    assert win.project.panels[pid].props["pattern"] == "*.jpg"
+    assert len(win.project.panels[pid].sequence(win.project)) == 3

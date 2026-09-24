@@ -29,13 +29,11 @@ The tutorial uses the adenylate kinase (AdK) trajectory that ships with **MDAnal
 ## 1. Install and start
 
 ```bash
-cd MD_Movie
-uv venv -p 3.14 .venv
-uv pip install -p .venv/bin/python -e ".[test]"   # PySide6, MDAnalysis, matplotlib, imageio-ffmpeg, …
-.venv/bin/mdmovie
+pip install "mdmovie[demo]"   # PySide6, MDAnalysis, matplotlib, imageio-ffmpeg, …
+mdmovie
 ```
 
-`[test]` also installs MDAnalysisTests, which provides the example trajectory.
+`[demo]` also installs MDAnalysisTests, which provides the example trajectory. From a source checkout, use `pip install -e ".[test]"` instead.
 
 **Before you start, render your protein frames.** The app does not draw molecules itself. It arranges frames you have already rendered, which keeps the visual quality of your favourite viewer:
 
@@ -90,7 +88,7 @@ Every change can be undone with <kbd>Ctrl+Z</kbd>.
 
 ## 4. Add the protein frames
 
-Select the big left cell and click **New image sequence panel**. A folder dialog opens: choose the folder with your rendered frames.
+Select the big left cell and click **New image sequence panel**. A folder dialog opens: choose the folder with your rendered frames. Next you're asked for the **File pattern**. It lists one pattern per image type found in the folder, with file counts (e.g. *2704 × .jpg*). Pick one or type your own. You get the same prompt when you change the folder later in the inspector.
 
 ![Image sequence panel](images/03_image_panel.png)
 
@@ -141,6 +139,8 @@ Now go back to the protein panel and press **Match trajectory…**. It fills in 
 - **Frame index from: filename**, with files numbered by trajectory frame (`frame.00042.png` = frame 42): keep *0* and *1*.
 
 The line at the bottom of the dialog spells out the resulting rule, e.g. *image k is shown at t = 1 + k × 2 ps*.
+
+**Frame-wise instead:** if you rendered one image per trajectory frame (image k = frame k), you can skip the matching. Set each plot's **X axis (and sync clock)** to *frame* instead. The plot then runs on frame numbers, so it lines up with an image panel left at its default timing (`t0` = 0, `dt` = 1). For a stride, set the image panel's `dt` to the stride. Keep every panel in a sync group on the same clock: a plot in *frame* mode won't line up with an image panel that was matched in ps.
 
 ---
 
@@ -311,7 +311,7 @@ Press <kbd>Space</kbd> to play the preview, then **File › Export movie…** (<
 | Format | Notes |
 |---|---|
 | **MP4 (H.264)** | For talks and papers. Plays everywhere, including PowerPoint and Keynote. **Quality (CRF)**: 18 looks lossless, 23 gives smaller files, 0 is truly lossless. The ffmpeg encoder comes bundled; nothing to install. |
-| **GIF** | For web pages and chat. Use 50 % size and *frame step* 2–3, or the file gets big. |
+| **GIF** | For web pages and chat. All frames share one palette fitted to the movie, so colours stay put and only the parts that change are stored. *Dithering: none* (default) keeps flat colours and thin lines clean. *floyd-steinberg* smooths gradients but adds shimmer. Use 50 % size and *frame step* 2–3 for small files, or 100 % if small text must stay sharp. |
 | **PNG sequence** | One image per frame, for editing in other software. |
 
 *Output size* scales everything together (text, lines, images), so a 50 % export looks exactly like the full-size one, only smaller. *Frames* exports just a range.
@@ -366,7 +366,7 @@ This file is in [`examples/presets/salt_bridge.py`](../examples/presets/salt_bri
 | Problem | Fix |
 |---|---|
 | *No images found* | Check the **File pattern** (`*.png` does not match `.tga`). Patterns match the file name only. |
-| The protein and the plot are out of step | Use **Match trajectory…** (step 6), or check `dt`: with *order* indexing it must include the stride. The summary line under **Images** shows the time range the app assumes. |
+| The protein and the plot are out of step | Use **Match trajectory…** (step 6), or set the plot's **X axis** to *frame* (image k = frame k). Otherwise check `dt`: with *order* indexing it must include the stride. The summary line under **Images** shows the time range the app assumes. |
 | *⚠ missing frame numbers* | Some rendered frames are missing. The nearest existing frame is shown instead; re-render the gaps if that matters. |
 | A plot says *Error: … matched no atoms* | Fix the selection in the series dialog (double-click the series). The analysis re-runs automatically. |
 | A plot never finishes | Long trajectories take time; the status bar shows progress. Use the frame *step* in the series dialog to analyse every *n*-th frame. |

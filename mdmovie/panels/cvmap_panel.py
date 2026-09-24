@@ -1,5 +1,6 @@
 """CV map panel: two collective variables as a moving point + trail over a 2-D background —
-a free-energy surface computed from the data (−kT ln P), a density, or an image file."""
+a free-energy surface computed from the data (−kT ln P), a density, or an image file.
+With a single data column (e.g. just an RMSD) it is drawn against time instead."""
 from __future__ import annotations
 
 import numpy as np
@@ -11,7 +12,7 @@ from mdmovie.panels.base import Prop, RenderContext, draw_message, with_defaults
 from mdmovie.panels.mpl_common import (AXES_PROPS, STYLE_PROPS, SeriesPanel, canvas_to_qimage, fg_color,
                                        freeze_layout, make_figure, style_axes)
 from mdmovie.panels.overlay import MARKER_SHAPES, trail_props, trail_range
-from mdmovie.panels.series_data import current_index, xy_data
+from mdmovie.panels.series_data import columns, current_index, xy_data
 
 KB = {"kJ/mol": 0.0083144626, "kcal/mol": 0.0019872043, "kT": None}
 MPL_MARKERS = dict(zip(MARKER_SHAPES, ("o", "s", "D", "^", "*", "X")))
@@ -43,6 +44,16 @@ def free_energy(x, y, bins: int, temperature: float, unit: str, rng=None, sigma:
     if np.isfinite(f).any():
         f -= np.nanmin(f)
     return f.T, xe, ye      # transposed so rows = y for imshow/contourf
+
+
+def cv_data(project, series_list, xi: int, yi: int):
+    """(xy_data result or None, vs_time). A single column is plotted against time (x = t)."""
+    cols = columns(project, series_list)
+    if len(cols) == 1:
+        lab, units, t, v = cols[0]
+        ok = np.isfinite(v)
+        return (t[ok], t[ok], v[ok], "Time (ps)", f"{lab} ({units})" if units else lab), True
+    return xy_data(project, series_list, xi, yi), False
 
 
 class CVMapPanel(SeriesPanel):
@@ -84,7 +95,7 @@ class CVMapPanel(SeriesPanel):
         if not self.series:
             draw_message(painter, rect, "No data\n(add series for the x and y CVs)", ctx.scale)
             return
-        data = xy_data(ctx.project, self.series, self.props["x_col"], self.props["y_col"])
+        data, _ = cv_data(ctx.project, self.series, self.props["x_col"], self.props["y_col"])
         if data is None:
             pending = [m for _, r, m in self.results(ctx.project) if r is None]
             draw_message(painter, rect, "\n".join(pending) or
@@ -100,7 +111,8 @@ class CVMapPanel(SeriesPanel):
 class _CVMapRenderer:
     def __init__(self, panel: CVMapPanel, w, h, scale, project):
         p = self.p = panel.props
-        self.t, self.x, self.y, xl, yl = xy_data(project, panel.series, p["x_col"], p["y_col"])
+        data, vs_time = cv_data(project, panel.series, p["x_col"], p["y_col"])
+        self.t, self.x, self.y, xl, yl = data
         self.fig, self.canvas = make_figure(w, h, scale, p)
         ax = self.ax = self.fig.add_subplot(111)
         style_axes(ax, p)
@@ -111,6 +123,8 @@ class _CVMapRenderer:
         rng = [[x.min() - pad_x, x.max() + pad_x], [y.min() - pad_y, y.max() + pad_y]]
 
         bg = p["bg_mode"]
+        if vs_time and bg in ("free energy", "density"):
+            bg = "none"  # a histogram over (time, value) has no meaning
         mappable = None
         if bg in ("free energy", "density") and len(x) > 2:
             if bg == "free energy":

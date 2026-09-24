@@ -1,12 +1,33 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdmovie"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Compose multi-panel movies of molecular dynamics simulations"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "dmighty007", email = "dibyendumaity1999@bose.res.in" }]
 requires-python = ">=3.10"
+keywords = ["molecular dynamics", "MDAnalysis", "movie", "visualization", "animation", "free energy surface"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Multimedia :: Video",
+]
 dependencies = [
     "PySide6>=6.5",
     "MDAnalysis>=2.7",
@@ -19,10 +40,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+demo = ["MDAnalysisTests"]   # example trajectory for the demo project and the tutorial
 test = ["pytest", "pytest-qt", "MDAnalysisTests"]
+dev = ["mdmovie[test]", "build", "twine"]
+
+[project.urls]
+Homepage = "https://github.com/dmighty007/mdmovie"
+Documentation = "https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md"
+Source = "https://github.com/dmighty007/mdmovie"
+Issues = "https://github.com/dmighty007/mdmovie/issues"
 
 [project.scripts]
 mdmovie = "mdmovie.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "mdmovie.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["mdmovie*"]

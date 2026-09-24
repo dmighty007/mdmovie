@@ -2,13 +2,13 @@
 
 Turn a molecular dynamics simulation into a multi-panel movie: your rendered protein next to live plots of RMSD, radius of gyration, secondary structure or any property you can compute with MDAnalysis. The panels can play in sync or each on its own clock.
 
-![Example movie](docs/images/demo.gif)
+![Example movie](https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/demo.gif)
 
-![A trajectory on a free-energy surface](docs/images/fes_demo.gif)
+![A trajectory on a free-energy surface](https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/fes_demo.gif)
 
-**→ New here? Follow the [illustrated tutorial](docs/TUTORIAL.md)**: about 15 minutes, using example data that ships with MDAnalysisTests.
+**→ New here? Follow the [illustrated tutorial](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md)**: about 15 minutes, using example data that ships with MDAnalysisTests.
 
-![The app](docs/images/08_sync.png)
+![The app](https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/08_sync.png)
 
 ## Features
 
@@ -19,7 +19,7 @@ Turn a molecular dynamics simulation into a multi-panel movie: your rendered pro
   - Built in: RMSD, Rg, RMSF, distances, dihedrals, H-bonds, native contacts, DSSP, atoms within a cutoff, and custom Python expressions.
   - Several presets and trajectories can share one plot, with twin y-axes.
   - Analyses run in the background and results are cached.
-  - [Add your own presets](docs/TUTORIAL.md#12-write-your-own-analysis-preset) in a few lines.
+  - [Add your own presets](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md#12-write-your-own-analysis-preset) in a few lines.
 - **Synced or independent panels.** Sync groups map movie frames to simulation time. Shift, speed up, trim, hold, hide or loop each group, and drag it on the timeline.
 - **Plot animations.** Four styles: the line grows, a marker moves, the axis scrolls, or the plot stays static. A live value readout is optional.
 - **Publication styles.** [SciencePlots](https://github.com/garrettj403/SciencePlots) styles (science, nature, ieee, notebook) and colour palettes, optional LaTeX, and fine control over ticks, frame, grid, limits, log scale, reference lines and legends. Each series gets its own line style, markers, width, opacity and fill.
@@ -27,13 +27,15 @@ Turn a molecular dynamics simulation into a multi-panel movie: your rendered pro
 - **Export** to MP4 (H.264), GIF or a PNG sequence from the GUI, or headless with `mdmovie render`. The preview shows exactly what gets exported.
 - Undo/redo for every edit, and projects saved as small JSON files with relative paths.
 
-## Quick start
+## Install
 
 ```bash
-uv venv -p 3.14 .venv && uv pip install -p .venv/bin/python -e ".[test]"
-.venv/bin/mdmovie                                   # GUI (try File › Open demo project)
-.venv/bin/mdmovie render my.mdmovie.json out.mp4    # render without the GUI
+pip install mdmovie            # or: pip install "mdmovie[demo]" to include the demo trajectory
+mdmovie                        # GUI (try File › Open demo project)
+mdmovie render my.mdmovie.json out.mp4    # render without the GUI
 ```
+
+Python 3.10 or newer. Everything, including ffmpeg for MP4 export, comes from pip; nothing else to install.
 
 ## Code map
 
@@ -47,4 +49,21 @@ mdmovie/ui/         main window, canvas editor, inspector, timeline, dialogs
 docs/               tutorial + make_tutorial_images.py (regenerates every screenshot)
 ```
 
-Run the tests with `.venv/bin/python -m pytest`; they run headless.
+## Development
+
+```bash
+git clone https://github.com/dmighty007/mdmovie && cd mdmovie
+pip install -e ".[dev]"
+python -m pytest              # headless
+```
+
+### Releasing
+
+1. Bump `__version__` in `mdmovie/__init__.py` and commit.
+2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
+
+The `publish` workflow then runs the tests, builds the sdist and wheel, checks that the tag matches the version, and uploads to PyPI with [Trusted Publishing](https://docs.pypi.org/trusted-publishers/), so no API token is stored anywhere. One-time setup: on PyPI, add a *pending publisher* for project `mdmovie`, owner `dmighty007`, repository `mdmovie`, workflow `publish.yml`, environment `pypi`. In the GitHub repository settings, create an environment named `pypi`.
+
+## License
+
+MIT, see [LICENSE](https://github.com/dmighty007/mdmovie/blob/main/LICENSE).

@@ -35,6 +35,19 @@ def scan_folder(folder: str, pattern: str = "*") -> list[str]:
     return [os.path.join(folder, n) for n in names]
 
 
+def folder_patterns(folder: str) -> list[tuple[str, int]]:
+    """One "*.ext" glob per image extension present in `folder`, with its file count, sorted by extension.
+    The extension keeps its on-disk case because glob matching is case-sensitive on Linux."""
+    if not folder or not os.path.isdir(folder):
+        return []
+    counts: dict[str, int] = {}
+    for n in os.listdir(folder):
+        if n.lower().endswith(IMAGE_EXTS):
+            ext = os.path.splitext(n)[1]
+            counts[ext] = counts.get(ext, 0) + 1
+    return [(f"*{ext}", counts[ext]) for ext in sorted(counts, key=lambda e: (e.lower(), e))]
+
+
 def parse_numbers(paths: list[str], regex: str = DEFAULT_NUMBER_REGEX) -> list[int | None]:
     rx = re.compile(regex or DEFAULT_NUMBER_REGEX)
     out = []

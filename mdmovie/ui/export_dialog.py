@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpin
                                QToolButton)
 
 from mdmovie.analysis.registry import Cancelled
-from mdmovie.render.exporter import ExportOptions, export_movie
+from mdmovie.render.exporter import GIF_DITHER, ExportOptions, export_movie
 from mdmovie.ui.widgets import last_dir, remember_dir
 
 FORMATS = {"MP4 (H.264)": ("mp4", ".mp4"), "GIF": ("gif", ".gif"), "PNG sequence": ("png", ".png")}
@@ -72,6 +72,10 @@ class ExportDialog(QDialog):
         self.gif_step = QSpinBox()
         self.gif_step.setRange(1, 100)
         self.gif_step.setToolTip("Keep every n-th frame (GIFs get large quickly)")
+        self.gif_dither = QComboBox()
+        self.gif_dither.addItems(list(GIF_DITHER))
+        self.gif_dither.setToolTip("All frames share one palette. 'none' keeps flat colours clean and the file small; "
+                                   "'floyd-steinberg' smooths gradients but adds noise that shimmers between frames.")
         self.start = QSpinBox()
         self.stop = QSpinBox()
         n = pr.n_frames
@@ -93,6 +97,7 @@ class ExportDialog(QDialog):
         form.addRow(*self.crf_row)
         form.addRow("Encoder speed", self.preset)
         form.addRow("GIF: frame step", self.gif_step)
+        form.addRow("GIF: dithering", self.gif_dither)
         form.addRow("Frames", rng)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.button(QDialogButtonBox.StandardButton.Ok).setText("Export")
@@ -112,6 +117,7 @@ class ExportDialog(QDialog):
         for w in (self.crf, self.preset):
             w.setEnabled(fmt == "mp4")
         self.gif_step.setEnabled(fmt == "gif")
+        self.gif_dither.setEnabled(fmt == "gif")
         if fmt == "gif" and self.scale.currentText() == "100%":
             self.scale.setCurrentText("50%")
 
@@ -139,7 +145,7 @@ class ExportDialog(QDialog):
         remember_dir(path, "export_dir")
         opts = ExportOptions(path, fmt, self.fps.value(), SCALES[self.scale.currentText()], self.crf.value(),
                              self.preset.currentText(), self.start.value(), self.stop.value() or None,
-                             self.gif_step.value())
+                             self.gif_step.value(), gif_dither=self.gif_dither.currentText())
         self.win.set_playing(False)
         thread = ExportThread(self.win.project, opts)
         dlg = QProgressDialog("Preparing…", "Cancel", 0, 100, self)

@@ -28,6 +28,14 @@ def test_natural_sort_and_filename_times(tmp_path):
     assert list(order.times) == [0, 1, 2, 3, 4]
 
 
+def test_folder_patterns(tmp_path):
+    d = make_frames(tmp_path / "f", [0, 1, 2])
+    for name in ("a.JPG", "b.jpg", "notes.txt"):
+        (d / name).write_bytes(b"")
+    assert S.folder_patterns(str(d)) == [("*.JPG", 1), ("*.jpg", 1), ("*.png", 3)]
+    assert S.folder_patterns(str(d / "frame.0000.png")) == [] and S.folder_patterns("") == []
+
+
 def test_image_cache_crop(tmp_path):
     d = make_frames(tmp_path / "f", [1], size=(100, 50))
     img = S.IMAGE_CACHE.get(str(d / "frame.0001.png"), [0.1, 0.2, 0.5, 0.4])

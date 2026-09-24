@@ -2,7 +2,7 @@
 
     mdmovie [project.mdmovie.json]                 open the GUI
     mdmovie render project.json out.mp4 [options]  render without the GUI
-    mdmovie demo DIR                               build a demo project (needs MDAnalysisTests)
+    mdmovie demo DIR                               build a demo project (pip install "mdmovie[demo]")
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def cmd_render(args) -> int:
     for e in load_user_presets([os.path.join(project.base_dir, "presets")]):
         print(e, file=sys.stderr)
     opts = ExportOptions(args.output, fps=args.fps, scale=args.scale, crf=args.crf, start=args.start,
-                         stop=args.stop, gif_step=args.gif_step)
+                         stop=args.stop, gif_step=args.gif_step, gif_dither=args.gif_dither)
     t0 = time.time()
 
     def progress(i, n, msg):
@@ -82,12 +82,17 @@ def main(argv=None) -> int:
         r.add_argument("--start", type=int, default=0)
         r.add_argument("--stop", type=int, default=None)
         r.add_argument("--gif-step", type=int, default=1)
+        r.add_argument("--gif-dither", choices=("none", "floyd-steinberg"), default="none",
+                       help="GIF dithering over the shared palette")
         d = sub.add_parser("demo", help="build a demo project from MDAnalysisTests data")
         d.add_argument("dir")
         args = ap.parse_args(argv)
         return cmd_render(args) if args.cmd == "render" else cmd_demo(args)
-    ap = argparse.ArgumentParser(prog="mdmovie", description="MD Movie Maker")
+    from mdmovie import __version__
+    ap = argparse.ArgumentParser(prog="mdmovie", description="MD Movie Maker",
+                                 epilog="Subcommands: 'mdmovie render -h', 'mdmovie demo -h'.")
     ap.add_argument("project", nargs="?")
+    ap.add_argument("--version", action="version", version=f"mdmovie {__version__}")
     args = ap.parse_args(argv)
     return cmd_gui(args.project)
 

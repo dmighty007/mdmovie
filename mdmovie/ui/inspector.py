@@ -2,7 +2,7 @@
 or an empty cell). Panel forms are generated from each panel class's Prop schema."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
@@ -247,11 +247,16 @@ class Inspector(QScrollArea):
                 + (f" · cropped to {crop[2] * 100:.0f}% × {crop[3] * 100:.0f}%" if crop else "")
                 + (f"\n⚠ {seq.warning}" if seq.warning else ""))
 
+    def _set_folder(self, pid, folder):
+        if folder != self.win.project.panels[pid].props["folder"]:
+            # deferred: the pattern dialog and the rebuild it triggers must not run inside the editor's signal
+            QTimer.singleShot(0, lambda: pid in self.win.project.panels and self.win.set_image_folder(pid, folder))
+
     def _image_box(self, lay, pid):
         panel = self.win.project.panels[pid]
         box = Section("Images")
         box.add_row("Source", make_editor("dir", panel.props["folder"],
-                                          lambda val: self._set_prop(pid, "folder", val)))
+                                          lambda val: self._set_folder(pid, val)))
         self._image_info = note(self._image_text(panel))
         box.add_widget(self._image_info)
         crop = _button("Crop…", "crop")
@@ -310,10 +315,14 @@ class Inspector(QScrollArea):
         box.add_widget(button_row(add, edit, re, rem))
         if xy:
             names = column_names(self.win.project, panel.series)
+            if panel.KIND == "cvmap" and len(names) == 1:
+                using = "One column, so it is plotted against time (x = time, y = #0)."
+            else:
+                using = f"Using x = #{panel.props['x_col']}, y = #{panel.props['y_col']}."
             box.add_widget(note(
-                "Add the two variables as series (or one series with two columns, e.g. a COLVAR). "
-                "Columns available: " + (", ".join(names) if names else "none yet") +
-                f". Using x = #{panel.props['x_col']}, y = #{panel.props['y_col']}."))
+                "Add the two variables as series (or one series with two columns, e.g. a COLVAR)"
+                + (", or a single series to plot it against time" if panel.KIND == "cvmap" else "") + ". "
+                "Columns available: " + (", ".join(names) if names else "none yet") + ". " + using))
         lay.addWidget(box)
 
     # --- sync group -----------------------------------------------------------------------

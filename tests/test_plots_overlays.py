@@ -13,8 +13,9 @@ from mdmovie.core import layout as L
 from mdmovie.core.project import Project
 from mdmovie.panels import Series
 from mdmovie.panels.base import RenderContext
-from mdmovie.panels.cvmap_panel import free_energy
+from mdmovie.panels.cvmap_panel import cv_data, free_energy
 from mdmovie.panels.mpl_common import STYLES, style_list
+from mdmovie.panels.series_data import series_time_info
 from mdmovie.render.compositor import cell_rects, render_frame
 from mdmovie.render.exporter import qimage_to_rgb
 from mdmovie.sources.datafile import parse_columns, read_table
@@ -103,6 +104,30 @@ def test_every_style_renders(tmp_path, style):
     assert a.std() > 5 and not np.array_equal(a, b)   # something drawn, and it moves
 
 
+def test_plot_frame_axis_syncs_with_images(tmp_path):
+    """COLVAR rows are 2 ps apart; images at default timing are one per index. Frame-wise, they line up."""
+    pr, plot = plot_project(tmp_path, mode="marker", cursor_line=False, marker_size=12)
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    for k in range(N):
+        img = QImage(16, 16, QImage.Format.Format_RGB32)
+        img.fill(QColor(k * 4, 0, 0))
+        img.save(str(frames / f"f.{k:03d}.png"))
+    im = pr.add_panel("image")
+    im.props.update(folder=str(frames))
+    pr.layout = L.Split("h", [0.5, 0.5], [L.Leaf(im.id), L.Leaf(plot.id)])
+    assert pr.n_frames == 2 * (N - 1) + 1          # by time: 118 ps of data at 1 ps per movie frame
+    plot.props["x_axis"] = "frame"
+    assert plot.time_info(pr) == (0.0, N - 1.0, 1.0)
+    assert pr.n_frames == N                        # frame k of the data ↔ image k ↔ movie frame k
+    plot.series[1].step = 2                        # every 2nd row keeps its own frame numbers 0, 2, 4, …
+    runner.compute_all(pr)
+    assert series_time_info(pr, plot.series[1:], frames=True) == (0.0, N - 2.0, 2.0)
+    a = qimage_to_rgb(render_frame(pr, 5, 0.5))
+    b = qimage_to_rgb(render_frame(pr, 50, 0.5))
+    assert a.std() > 5 and not np.array_equal(a, b)
+
+
 def test_concurrent_styled_rendering(tmp_path):
     """Preview and export threads drawing panels with different styles must not interfere."""
     pr1, _ = plot_project(tmp_path, style="science")
@@ -159,6 +184,30 @@ def test_cvmap_panel_point_moves(tmp_path):
         m = (a[..., 0] > 220) & (a[..., 1] < 60) & (a[..., 2] > 220)
         return np.nonzero(m)[1].mean()
     assert magenta_x(5) < magenta_x(30) < magenta_x(55)   # x grows linearly in the COLVAR
+
+
+def test_cvmap_single_column_plots_against_time(tmp_path):
+    t, x, y = write_colvar(tmp_path / "COLVAR")
+    pr = Project()
+    pr.path = str(tmp_path / "p.mdmovie.json")
+    cv = pr.add_panel("cvmap")
+    cv.series = [Series("", DATA_FILE, {"path": str(tmp_path / "COLVAR"), "columns": "2"})]  # psi only
+    cv.props.update(marker_color="#ff00ff", trail="none")
+    pr.layout = L.Leaf(cv.id)
+    runner.compute_all(pr)
+    (ts, xs, ys, xl, yl), vs_time = cv_data(pr, cv.series, 0, 1)
+    assert vs_time and xl == "Time (ps)" and yl == "psi"
+    assert np.allclose(xs, t) and np.allclose(ys, y)
+
+    def magenta(g):
+        a = qimage_to_rgb(render_frame(pr, g, 0.5)).astype(int)
+        m = (a[..., 0] > 220) & (a[..., 1] < 60) & (a[..., 2] > 220)
+        assert m.any(), g   # drawn, not the "needs two columns" message
+        cy, cx = np.nonzero(m)
+        return cx.mean(), cy.mean()
+    (x0, _), (x1, y1), (x2, y2) = magenta(0), magenta(30), magenta(59)
+    assert x0 < x1 < x2                       # time runs left to right
+    assert (y2 > y1) == (y[59] < y[30])       # image rows grow downwards
 
 
 # --- image overlay on a pre-rendered FES ------------------------------------------------------

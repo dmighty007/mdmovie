@@ -8,6 +8,7 @@ from PySide6.QtGui import QPainter
 from mdmovie.panels.base import Prop, RenderContext, draw_message
 from mdmovie.panels.mpl_common import (AXES_PROPS, STYLE_PROPS, SeriesPanel, canvas_to_qimage, fg_color,
                                        freeze_layout, make_figure, palette_colors, pick_time_unit, style_axes)
+from mdmovie.panels.series_data import series_time_info, series_times
 
 LINESTYLES = {"solid": "-", "dashed": "--", "dotted": ":", "dashdot": "-.", "none": "none"}
 MARKERS = {"none": "", "circle": "o", "square": "s", "triangle": "^", "diamond": "D", "cross": "x",
@@ -39,7 +40,7 @@ class PlotPanel(SeriesPanel):
     PROPS = [
         Prop("mode", "choice", "reveal", "Animation",
              ("reveal", "marker", "window", "static"), section="Animation"),
-        Prop("window", "float", 0.0, "Window width (ps, 0 = auto)", minimum=0, maximum=1e12, section="Animation"),
+        Prop("window", "float", 0.0, "Window width (ps or frames, 0 = auto)", minimum=0, maximum=1e12, section="Animation"),
         Prop("ghost", "bool", True, "Show full curve faintly", section="Animation"),
         Prop("ghost_alpha", "float", 0.2, "Faint curve opacity", minimum=0, maximum=1, step=0.05,
              section="Animation"),
@@ -56,6 +57,8 @@ class PlotPanel(SeriesPanel):
         Prop("smoothing", "int", 1, "Running mean (points)", minimum=1, maximum=10000, section="Style"),
         Prop("fill_alpha", "float", 0.2, "Fill opacity (series with fill)", minimum=0, maximum=1, step=0.05,
              section="Style"),
+        # frame: x = trajectory frame number, which is also the sync clock, so image k lines up with frame k
+        Prop("x_axis", "choice", "time", "X axis (and sync clock)", ("time", "frame"), section="Axes"),
         Prop("ylabel", "str", "", "Y label (blank = auto)", section="Axes"),
         Prop("ylabel_right", "str", "", "Right Y label", section="Axes"),
         Prop("xmin", "optfloat", None, "X min", section="Axes"),
@@ -70,7 +73,7 @@ class PlotPanel(SeriesPanel):
         Prop("hline_color", "color", "#888888", "Reference line colour", section="Reference lines"),
         Prop("hline_style", "choice", "dotted", "Reference line style", ("dotted", "dashed", "solid"),
              section="Reference lines"),
-        Prop("vlines", "str", "", "Marks at time = (ps, comma-separated)", section="Reference lines"),
+        Prop("vlines", "str", "", "Marks at time = (ps or frame, comma-separated)", section="Reference lines"),
         Prop("legend", "choice", "best", "Legend",
              ("none", "best", "upper left", "upper right", "lower left", "lower right", "outside top",
               "outside right"), section="Legend"),
@@ -84,6 +87,9 @@ class PlotPanel(SeriesPanel):
             return
         w, h = max(1, round(rect.width())), max(1, round(rect.height()))
         painter.drawImage(rect.topLeft(), self.draw_frame(w, h, ctx.scale, ctx.project, ctx.time))
+
+    def time_info(self, project):
+        return series_time_info(project, self.series, frames=self.props["x_axis"] == "frame")
 
     def build_renderer(self, w, h, scale, project):
         return _PlotRenderer(self, w, h, scale, self.results(project))
@@ -105,8 +111,10 @@ class _PlotRenderer:
         profiles = [(s, r) for s, r, _ in results if r is not None and r.kind == "profile"]
         pending = [msg for s, r, msg in results if r is None]
         self.is_profile = not timeseries and bool(profiles)
+        frames = p["x_axis"] == "frame"
         max_t = max((float(r.time[-1]) for _, r in timeseries if len(r.time)), default=0.0)
-        self.unit, self.tf = pick_time_unit(p["time_unit"], max_t)
+        # frame numbers are used as they are: tf = 1 keeps the window, marks and limits in frames too
+        self.unit, self.tf = ("frame", 1.0) if frames else pick_time_unit(p["time_unit"], max_t)
 
         self.lines = []  # dicts: x, y, label, units, line, marker, axes, fill
         mode = p["mode"]
@@ -124,7 +132,7 @@ class _PlotRenderer:
                     continue
                 color = s.color if s.color and len(cols) == 1 else colors[color_i % len(colors)]
                 color_i += 1
-                x = (res.x if self.is_profile else res.time * self.tf)
+                x = (res.x if self.is_profile else series_times(s, res, frames) * self.tf)
                 y = smooth(res.values[:, c], int(p["smoothing"]))
                 label = s.label or res.labels[c]
                 if s.label and len(cols) > 1:
@@ -153,7 +161,8 @@ class _PlotRenderer:
 
         self._set_limits()
         units = next((e["units"] for e in self.lines if e["ax"] is ax), "")
-        ax.set_xlabel(p["xlabel"] or (profiles[0][1].xlabel if self.is_profile else f"Time ({self.unit})"))
+        ax.set_xlabel(p["xlabel"] or (profiles[0][1].xlabel if self.is_profile else
+                                    "Frame" if frames else f"Time ({self.unit})"))
         left = [e for e in self.lines if e["ax"] is ax]
         ylab = p["ylabel"] or ((left[0]["label"] + (f" ({units})" if units else "")) if len(left) == 1 else units)
         ax.set_ylabel(ylab)

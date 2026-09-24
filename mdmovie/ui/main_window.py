@@ -538,9 +538,21 @@ class MainWindow(QMainWindow):
             d = QFileDialog.getExistingDirectory(self, "Choose the folder with the image sequence", last_dir())
             if d:
                 remember_dir(d)
-                self.apply("Choose image folder", lambda p: p.panels[pid].props.__setitem__("folder", d))
+                self.set_image_folder(pid, d)
         elif panel.HAS_SERIES:
             self.edit_series(pid, None)
+
+    def set_image_folder(self, pid, folder):
+        """Point an image panel at a folder (or single picture); for a folder, let the user pick the pattern."""
+        from mdmovie.ui.dialogs import choose_pattern
+        props = self.project.panels[pid].props
+        pattern = choose_pattern(self, folder, props["pattern"]) if os.path.isdir(folder) else None
+
+        def fn(p):
+            p.panels[pid].props["folder"] = folder
+            if pattern:
+                p.panels[pid].props["pattern"] = pattern
+        self.apply("Choose image folder", fn)
 
     def assign_panel(self, path, pid):
         self.apply("Assign panel", lambda p: setattr(L.get(p.layout, path), "panel", pid))
@@ -785,7 +797,7 @@ class MainWindow(QMainWindow):
         try:
             path = build_demo(os.path.join(os.path.expanduser("~"), ".cache", "mdmovie", "demo"))
         except Exception as e:
-            QMessageBox.critical(self, "Demo", f"Could not build the demo (needs MDAnalysisTests):\n{e}")
+            QMessageBox.critical(self, "Demo", f"Could not build the demo (needs MDAnalysisTests: pip install \"mdmovie[demo]\"):\n{e}")
             return
         self.open_project(path)
         self.statusBar().showMessage("Demo loaded — analysis runs in the background", 6000)

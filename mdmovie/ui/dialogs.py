@@ -5,11 +5,12 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton,
-                               QSpinBox, QVBoxLayout)
+                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMessageBox,
+                               QPushButton, QSpinBox, QVBoxLayout)
 
 from mdmovie.analysis.registry import presets_for
 from mdmovie.panels import Series
+from mdmovie.sources.image_sequence import folder_patterns, scan_folder
 from mdmovie.ui.widgets import ColorButton, CompactDoubleSpinBox, PathEdit, last_dir, make_editor, remember_dir
 
 NO_TRAJ = "(none: preset reads its own file)"
@@ -17,6 +18,24 @@ NO_TRAJ = "(none: preset reads its own file)"
 TOPOLOGY_FILTER = ("Topology (*.pdb *.gro *.psf *.prmtop *.parm7 *.top *.tpr *.mol2 *.pqr *.data *.xyz *.crd);;"
                    "All files (*)")
 TRAJ_FILTER = "Trajectories (*.xtc *.trr *.dcd *.nc *.netcdf *.ncdf *.mdcrd *.crd *.lammpstrj *.xyz *.pdb *.gro);;All files (*)"
+
+
+def choose_pattern(parent, folder: str, current: str) -> str | None:
+    """Ask which files of an image folder form the sequence. Offers one glob per image type found
+    (plus "*" when there are several) and accepts a typed pattern; None if cancelled or no images."""
+    found = folder_patterns(folder)
+    if not found:
+        return None
+    items = [p for p, _ in found] + (["*"] if len(found) > 1 else [])
+    if current and current not in items and scan_folder(folder, current):  # keep a custom pattern that works
+        items.insert(0, current)
+    summary = ", ".join(f"{n} × {p[1:]}" for p, n in found)
+    text, ok = QInputDialog.getItem(
+        parent, "File pattern",
+        f"Found {summary} in\n{folder}\n\nWhich files make up the sequence? "
+        "(glob; separate several with commas)",
+        items, items.index(current) if current in items else 0, True)
+    return text.strip() if ok and text.strip() else None
 
 
 class TrajectoryDialog(QDialog):
