@@ -3,8 +3,9 @@ or an empty cell). Panel forms are generated from each panel class's Prop schema
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QVBoxLayout,
+                               QWidget)
 
 from mdmovie.analysis import runner
 from mdmovie.core.project import RESOLUTION_PRESETS
@@ -16,7 +17,9 @@ from mdmovie.ui.widgets import (ColorButton, HeaderCard, OptFloatEdit, Section, 
                                 note)
 
 NEW_GROUP = "__new__"
-COLLAPSED_BY_DEFAULT = {"Frame", "Style", "Axes", "Reference lines", "Legend"}   # less-used sections start folded
+# less-used sections start folded
+COLLAPSED_BY_DEFAULT = {"Frame", "Style", "Axes", "Reference lines", "Legend", "Data overlay"}
+IMAGE_DATA_TITLE = "Overlay data (x, y columns)"
 
 
 def _button(text: str, icon_name: str | None = None, tip: str = "") -> QPushButton:
@@ -28,6 +31,21 @@ def _button(text: str, icon_name: str | None = None, tip: str = "") -> QPushButt
     return b
 
 
+def _span(a: float, b: float | None = None) -> str:
+    """A time or a time range in ps, written in the unit that suits it (ps, ns or µs)."""
+    top = abs(b if b is not None else a)
+    unit, f = ("µs", 1e-6) if top >= 1e6 else ("ns", 1e-3) if top >= 1e3 else ("ps", 1.0)
+    fmt = lambda v: f"{v * f:.4g}"
+    return f"{fmt(a)}–{fmt(b)} {unit}" if b is not None else f"{fmt(a)} {unit}"
+
+
+def later(fn, *args) -> None:
+    """Run fn once the current event is handled. Signals from item views and combo boxes must not open a
+    dialog that rebuilds the inspector there and then: that deletes the view while it is still inside its
+    own mouse handler, and Qt crashes on returning into it."""
+    QTimer.singleShot(0, lambda: fn(*args))
+
+
 class Inspector(QScrollArea):
     def __init__(self, win):
         super().__init__()
@@ -35,6 +53,7 @@ class Inspector(QScrollArea):
         self.setWidgetResizable(True)
         self.setMinimumWidth(340)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._page = None          # what the current form shows; the scroll position is kept per page
         self._series_list: QListWidget | None = None
         self._image_info: QLabel | None = None
         self._group_info: QLabel | None = None
@@ -46,6 +65,10 @@ class Inspector(QScrollArea):
         self.win.apply(f"Change {name.replace('_', ' ')}", fn, merge=f"{pid}.{name}", structural=False)
         if name in ("folder", "pattern", "index_from", "number_regex", "t0", "dt"):
             self.refresh_status()
+        panel = self.win.project.panels.get(pid)
+        if panel is not None and any(name == cond[0] for p in panel.all_props() for cond in p.when):
+            # other settings appear or disappear with this one; deferred: we are inside the editor's signal
+            QTimer.singleShot(0, self.rebuild)
 
     def _set_attr(self, obj_getter, attr, value, label, structural=False):
         def fn(p):
@@ -55,13 +78,15 @@ class Inspector(QScrollArea):
 
     # --- build ----------------------------------------------------------------------------
     def rebuild(self):
+        sel = self.win.selection
+        scroll = self.verticalScrollBar().value() if sel == self._page else 0
+        self._page = sel
         self._series_list = self._image_info = self._group_info = None
         body = QWidget()
         body.setObjectName("inspectorBody")
         lay = QVBoxLayout(body)
-        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setContentsMargins(14, 6, 14, 14)
         lay.setSpacing(10)
-        sel = self.win.selection
         pr = self.win.project
         kind = sel[0] if sel else None
         if kind == "panel" and sel[1] in pr.panels:
@@ -78,6 +103,9 @@ class Inspector(QScrollArea):
             self._project_page(lay)
         lay.addStretch(1)
         self.setWidget(body)
+        if scroll:   # same selection as before: stay where the user was instead of jumping to the top
+            body.adjustSize()
+            self.verticalScrollBar().setValue(scroll)
 
     def refresh_status(self):
         """Update live status labels without rebuilding the form (keeps keyboard focus)."""
@@ -172,7 +200,7 @@ class Inspector(QScrollArea):
             group.addItem(icons.icon("group", "muted"), g.name, g.id)
         group.addItem(icons.icon("plus", "muted"), "New independent group…", NEW_GROUP)
         group.setCurrentIndex(max(0, group.findData(panel.group)))
-        group.currentIndexChanged.connect(lambda i: self._change_group(pid, group.itemData(i)))
+        group.currentIndexChanged.connect(lambda i: later(self._change_group, pid, group.itemData(i)))
         general.add_row("Sync group", group)
         self._group_info = note(self._group_text(panel.group))
         general.add_widget(self._group_info)
@@ -182,12 +210,14 @@ class Inspector(QScrollArea):
             self._overlay_box(lay, overlay_index)
         if panel.KIND == "image":
             self._image_box(lay, pid)
+        if panel.KIND == "molecule":
+            self._molecule_box(lay, pid)
         if panel.HAS_SERIES:
             self._series_box(lay, pid)
 
         sections: dict[str, Section] = {}
         for prop in panel.all_props():
-            if prop.hidden or (panel.KIND == "image" and prop.name == "folder"):
+            if not prop.shown(panel.props) or (panel.KIND == "image" and prop.name == "folder"):
                 continue
             title = prop.section or "Properties"
             if title not in sections:
@@ -273,6 +303,69 @@ class Inspector(QScrollArea):
         box.add_widget(button_row(match, calib))
         lay.addWidget(box)
 
+    # --- molecule-specific ----------------------------------------------------------------
+    def _molecule_box(self, lay, pid):
+        pr = self.win.project
+        panel = pr.panels[pid]
+        box = Section("Molecule")
+        traj = QComboBox()
+        for t in pr.trajectories.values():
+            traj.addItem(icons.icon("trajectory", "muted"), t.name, t.id)
+        traj.addItem(icons.icon("plus", "muted"), "Load trajectory…", NEW_GROUP)
+        traj.setCurrentIndex(traj.findData(panel.props["traj"]))
+        if panel.trajectory(pr) is None:
+            traj.setPlaceholderText("none: choose or load one")
+            traj.setCurrentIndex(-1)
+        traj.activated.connect(lambda i: later(self.win.set_molecule_trajectory, pid, traj.itemData(i)))
+        box.add_row("Trajectory", traj)
+
+        lst = QListWidget()
+        lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lst.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        reps = panel.props["reps"]
+        try:      # say which representations select nothing in this trajectory (e.g. the cartoon of a non-protein)
+            drawn = [len(r.index) for r in panel.scene(pr).reps]
+        except Exception:
+            drawn = [1] * len(reps)
+        for r, n in zip(reps, drawn):
+            text = f"{r.get('style')}  ·  {r.get('sel')}  ·  " + (r.get('color') if n else "nothing to draw")
+            QListWidgetItem(icons.icon("molecule", "muted"), text, lst).setToolTip(text)
+        lst.itemDoubleClicked.connect(lambda item: later(self.win.edit_rep, pid, lst.row(item)))
+        if reps:
+            lst.setCurrentRow(0)
+            lst.setFixedHeight(min(len(reps), 5) * lst.sizeHintForRow(0) + 12)
+            box.add_widget(lst)
+        else:
+            lst.hide()
+            lst.setParent(box)
+            empty = QLabel("Nothing is drawn yet. Add a representation.")
+            empty.setObjectName("emptyHint")
+            empty.setWordWrap(True)
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            box.add_widget(empty)
+        add = _button("Add", "plus", "Add a representation: a selection of atoms and how to draw it")
+        add.setObjectName("primary")
+        add.clicked.connect(lambda: self.win.edit_rep(pid, None))
+        edit = _button("Edit…")
+        edit.clicked.connect(lambda: lst.currentRow() >= 0 and self.win.edit_rep(pid, lst.currentRow()))
+        rem = _button("", "trash", "Remove the selected representation")
+        rem.clicked.connect(lambda: lst.currentRow() >= 0 and self.win.remove_rep(pid, lst.currentRow()))
+        for b in (edit, rem):
+            b.setEnabled(bool(reps))
+        box.add_widget(button_row(add, edit, rem))
+
+        views = []
+        for name in ("front", "side", "top"):
+            b = _button(name.capitalize(), tip=f"Look at the molecule from the {name}")
+            b.clicked.connect(lambda _=False, n=name: self.win.set_molecule_view(pid, n))
+            views.append(b)
+        reset = _button("Reset view", tip="Front view, centred, zoomed to fit")
+        reset.clicked.connect(lambda: self.win.set_molecule_view(pid, None))
+        box.add_widget(button_row(*views, reset))
+        box.add_widget(note("With this panel selected: drag in the preview to rotate, Shift-drag to move, "
+                            "scroll to zoom."))
+        lay.addWidget(box)
+
     # --- series-specific ------------------------------------------------------------------
     def _series_text(self, s) -> str:
         pr = self.win.project
@@ -293,16 +386,30 @@ class Inspector(QScrollArea):
         from mdmovie.panels.series_data import column_names
         panel = self.win.project.panels[pid]
         xy = panel.KIND in ("image", "cvmap")
-        box = Section("Overlay data (x, y columns)" if panel.KIND == "image" else
-                      "Data: x and y columns" if xy else "Data series (analysis presets)")
+        # most image panels are plain protein frames: their optional data overlay stays folded until used
+        box = Section(IMAGE_DATA_TITLE, collapsed=not panel.series) if panel.KIND == "image" else Section(
+            "Data: x and y columns" if xy else "Data series (analysis presets)")
         lst = QListWidget()
-        lst.setMaximumHeight(96)
+        lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lst.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         for s in panel.series:
-            QListWidgetItem(icons.icon(icons.KIND_ICONS.get(panel.KIND, "plot"), "muted"),
-                            self._series_text(s), lst)
-        lst.itemDoubleClicked.connect(lambda item: self.win.edit_series(pid, lst.row(item)))
+            item = QListWidgetItem(icons.icon(icons.KIND_ICONS.get(panel.KIND, "plot"), "muted"),
+                                   self._series_text(s), lst)
+            item.setToolTip(item.text())
+        lst.itemDoubleClicked.connect(lambda item: later(self.win.edit_series, pid, lst.row(item)))
         self._series_list = lst
-        box.add_widget(lst)
+        if panel.series:    # as tall as its rows (up to five), not a fixed box that is mostly empty
+            lst.setCurrentRow(0)
+            lst.setFixedHeight(min(len(panel.series), 5) * lst.sizeHintForRow(0) + 12)
+            box.add_widget(lst)
+        else:
+            lst.hide()
+            lst.setParent(box)
+            empty = QLabel("No data yet. Add a series to draw something here.")
+            empty.setObjectName("emptyHint")
+            empty.setWordWrap(True)
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            box.add_widget(empty)
         add = _button("Add", "plus")
         add.setObjectName("primary")
         add.clicked.connect(lambda: self.win.edit_series(pid, None))
@@ -312,6 +419,8 @@ class Inspector(QScrollArea):
         rem.clicked.connect(lambda: lst.currentRow() >= 0 and self.win.remove_series(pid, lst.currentRow()))
         re = _button("Recompute", tip="Discard the cached result and run the analysis again")
         re.clicked.connect(lambda: lst.currentRow() >= 0 and self.win.recompute_series(pid, lst.currentRow()))
+        for b in (edit, re, rem):
+            b.setEnabled(bool(panel.series))
         box.add_widget(button_row(add, edit, re, rem))
         if xy:
             names = column_names(self.win.project, panel.series)
@@ -374,12 +483,34 @@ class Inspector(QScrollArea):
     def _traj_page(self, lay, tid):
         pr = self.win.project
         t = pr.trajectories[tid]
+        m = None
         try:
             m = t.meta(pr.resolve_path)
-            info = f"{m.n_atoms:,} atoms · {m.n_frames:,} frames · dt = {m.dt:g} ps"
+            info = f"{m.n_atoms:,} atoms · {m.n_frames:,} frames · " + (
+                f"{_span(m.t0, m.t0 + (m.n_frames - 1) * m.dt)}, every {_span(m.dt)}" if m.timed else
+                "no frame times in the file: 1 frame is counted as 1 ps")
         except Exception as e:
             info = f"⚠ cannot load: {e}"
         lay.addWidget(HeaderCard("trajectory", t.name, info))
+        if m is not None:
+            try:
+                rows = t.composition(pr.resolve_path)
+            except Exception:
+                rows = []
+            if rows:
+                comp = Section("System")
+                for kind, text in rows:
+                    comp.add_row(kind.capitalize(), note(text))
+                lay.addWidget(comp)
+        reading = Section("Reading")
+        whole = QCheckBox("Make molecules whole")
+        whole.setChecked(t.whole)
+        whole.setToolTip("Join molecules split across the periodic box, as 'gmx trjconv -pbc mol -center' does, "
+                         "for drawing and analysis. Water and ions are left as stored.")
+        whole.toggled.connect(lambda on: later(self._set_attr, lambda p: p.trajectories[tid], "whole", on,
+                                               "Periodic boundaries"))
+        reading.add_row("Periodic boundaries", whole)
+        lay.addWidget(reading)
         sec = Section("Files")
         name = QLineEdit(t.name)
         name.editingFinished.connect(lambda: self._set_attr(lambda p: p.trajectories[tid], "name",
@@ -389,6 +520,7 @@ class Inspector(QScrollArea):
         sec.add_row("Trajectory", note("\n".join(t.trajectories) or "(coordinates from topology)"))
         lay.addWidget(sec)
         used = [p.name for p in pr.panels.values() for s in p.series if s.traj == tid]
+        used += [p.name for p in pr.panels.values() if p.props.get("traj") == tid]
         lay.addWidget(note("Used by: " + (", ".join(sorted(set(used))) or "nothing yet")))
         change = _button("Change files…", "open")
         change.clicked.connect(lambda: self.win.edit_trajectory(tid))
@@ -411,8 +543,8 @@ class Inspector(QScrollArea):
             combo.addItem("Show existing panel…", None)
             for pid, p in pr.panels.items():
                 combo.addItem(icons.icon(icons.KIND_ICONS.get(p.KIND, "canvas"), "muted"), p.name, pid)
-            combo.currentIndexChanged.connect(lambda i: combo.itemData(i) and self.win.assign_panel(
-                path, combo.itemData(i)))
+            combo.currentIndexChanged.connect(lambda i: combo.itemData(i) and later(self.win.assign_panel,
+                                                                               path, combo.itemData(i)))
             sec.add_widget(combo)
         lay.addWidget(sec)
         rm = _button("Remove cell", "trash")

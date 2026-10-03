@@ -80,6 +80,8 @@ def compute(project, series, progress=None, cancelled=None):
     try:
         u = project.trajectories[series.traj].universe(project.resolve_path) if pdef.needs_universe else None
         res = pdef.func(u, (series.start, series.stop, series.step), progress, cancelled, **params)
+        if u is not None:
+            _count_untimed_frames(project, series, res)
     except Cancelled:
         raise
     except Exception as e:
@@ -96,6 +98,21 @@ def compute(project, series, progress=None, cancelled=None):
         _mem[key] = res
         _errors.pop(key, None)
     return res
+
+
+def _count_untimed_frames(project, series, res) -> None:
+    """Some trajectories store no frame times (every frame reports the same time), and the user may
+    have given the time between frames. Either way, time the result as the trajectory source does, so
+    plots stay in step with molecule and image panels."""
+    import numpy as np
+    t = getattr(res, "time", None)
+    traj = project.trajectories[series.traj]
+    if t is None or len(t) < 2 or (np.ptp(t) > 0 and traj.dt <= 0):
+        return
+    meta = traj.meta(project.resolve_path)
+    frames = np.arange(meta.n_frames)[slice(series.start, series.stop, series.step)]
+    if len(frames) == len(t):
+        res.time = meta.t0 + frames * meta.dt
 
 
 def forget(key: str) -> None:

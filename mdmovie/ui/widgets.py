@@ -21,6 +21,8 @@ def remember_dir(path: str, key: str = "last_dir") -> None:
     settings().setValue(key, path if os.path.isdir(path) else os.path.dirname(path))
 
 
+LABEL_WIDTH = 138   # every inspector form shares one label column, so fields line up across sections
+
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.tga *.tif *.tiff *.bmp *.webp);;All files (*)"
 
 
@@ -82,6 +84,10 @@ class Section(QFrame):
     def add_row(self, label: str, widget: QWidget) -> None:
         lbl = QLabel(label)
         lbl.setObjectName("formLabel")
+        lbl.setWordWrap(True)      # long labels wrap instead of pushing the fields out of view
+        lbl.setFixedWidth(LABEL_WIDTH)
+        lbl.ensurePolished()
+        lbl.setMinimumHeight(lbl.heightForWidth(LABEL_WIDTH))
         self.form.addRow(lbl, widget)
 
     def add_widget(self, widget: QWidget) -> None:
@@ -151,6 +157,8 @@ class ColorButton(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.btn = QPushButton()
+        self.btn.setObjectName("colorButton")
+        self.btn.setIconSize(QSize(30, 16))
         self.btn.clicked.connect(self._pick)
         lay.addWidget(self.btn, 1)
         if optional:
@@ -164,7 +172,8 @@ class ColorButton(QWidget):
 
     def set_color(self, color: str, emit: bool = False) -> None:
         self.color = color or ""
-        pm = QPixmap(30, 16)
+        pm = QPixmap(60, 32)
+        pm.setDevicePixelRatio(2)
         pm.fill(Qt.GlobalColor.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -178,7 +187,7 @@ class ColorButton(QWidget):
             p.drawLine(4, 13, 26, 3)
         p.end()
         self.btn.setIcon(QIcon(pm))
-        self.btn.setText(self.color or "none")
+        self.btn.setText("  " + (self.color or "none"))
         if emit:
             self.changed.emit(self.color)
 
@@ -205,7 +214,7 @@ class PathEdit(QWidget):
         # mode: "dir", "file", or "dir|file" (two buttons: a folder of frames or a single picture)
         for m in (["dir", "file"] if mode == "dir|file" else [mode]):
             btn = QToolButton()
-            btn.setIcon(icons.icon("open" if m == "dir" else "image", "muted"))
+            btn.setIcon(icons.icon("image" if m == "file" and filt == IMAGE_FILTER else "open", "muted"))
             btn.setToolTip("Choose a folder" if (m == "dir" and mode == "dir|file") else
                            "Choose a single image file" if mode == "dir|file" else caption)
             btn.clicked.connect(lambda _=False, mm=m: self._browse(mm))

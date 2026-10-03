@@ -4,9 +4,9 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QMessageBox,
-                               QPushButton, QSpinBox, QVBoxLayout)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+                               QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+                               QMessageBox, QPushButton, QSpinBox, QVBoxLayout)
 
 from mdmovie.analysis.registry import presets_for
 from mdmovie.panels import Series
@@ -39,7 +39,7 @@ def choose_pattern(parent, folder: str, current: str) -> str | None:
 
 
 class TrajectoryDialog(QDialog):
-    def __init__(self, parent=None, topology="", trajectories=(), name=""):
+    def __init__(self, parent=None, topology="", trajectories=(), name="", dt=0.0, whole=True):
         super().__init__(parent)
         self.setWindowTitle("Trajectory")
         self.resize(620, 360)
@@ -47,6 +47,7 @@ class TrajectoryDialog(QDialog):
         self.top = PathEdit(topology, "file", "Choose topology", TOPOLOGY_FILTER)
         self.trajs = QListWidget()
         self.trajs.addItems(list(trajectories))
+        self.top.edit.textChanged.connect(self._suggest_trajectory)
         add = QPushButton("Add…")
         add.clicked.connect(self._add)
         rem = QPushButton("Remove")
@@ -60,7 +61,24 @@ class TrajectoryDialog(QDialog):
         form.addRow("Topology", self.top)
         form.addRow("Trajectory files\n(concatenated in order)", self.trajs)
         form.addRow("", btns)
+        self.dt = CompactDoubleSpinBox()
+        self.dt.setDecimals(6)
+        self.dt.setRange(0, 1e9)
+        self.dt.setSpecialValueText("from the file")
+        self.dt.setValue(dt)
+        self.dt.setToolTip("Simulation time between saved frames. Leave at 'from the file' unless the file "
+                           "stores no times (or wrong ones).")
+        form.addRow("Time between frames (ps)", self.dt)
+        self.whole = QCheckBox("Make molecules whole")
+        self.whole.setChecked(whole)
+        self.whole.setToolTip("Join molecules that are split across the periodic box and keep them together, "
+                              "as 'gmx trjconv -pbc mol -center' does, for drawing and for analysis "
+                              "(RMSD, Rg…). Water and ions are left as stored. Untick for trajectories that "
+                              "were already processed, to save a little time.")
+        form.addRow("Periodic boundaries", self.whole)
+        self._warned = False
         self.info = QLabel("")
+        self.info.setWordWrap(True)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._check)
         bb.rejected.connect(self.reject)
@@ -76,6 +94,16 @@ class TrajectoryDialog(QDialog):
             remember_dir(files[0])
             self.trajs.addItems(files)
 
+    def _suggest_trajectory(self, top: str):
+        """md.tpr → md.xtc (or .trr, .dcd…) from the same folder, while no trajectory has been chosen."""
+        from mdmovie.core.quickstart import TRAJECTORY_EXT
+        stem, _ = os.path.splitext(top.strip())
+        if self.trajs.count() or not stem:
+            return
+        found = next((stem + e for e in TRAJECTORY_EXT if os.path.isfile(stem + e)), None)
+        if found:
+            self.trajs.addItem(found)
+
     def values(self):
         return (self.top.edit.text().strip(), [self.trajs.item(i).text() for i in range(self.trajs.count())],
                 self.name.text().strip())
@@ -89,13 +117,23 @@ class TrajectoryDialog(QDialog):
         self.info.setText("Loading…")
         self.repaint()
         try:
-            self.meta = TrajectorySource("tmp", "", top, trajs).meta(lambda p: p)
+            self.meta = TrajectorySource("tmp", "", top, trajs, self.dt.value(), self.whole.isChecked()).meta(
+                lambda p: p)
         except Exception as e:
             self.info.setText("")
             QMessageBox.critical(self, "Cannot load trajectory", f"{type(e).__name__}: {e}")
             return
         if not self.name.text().strip():
             self.name.setText(os.path.splitext(os.path.basename(top))[0])
+        if not self.meta.timed and not self._warned:     # say so once, instead of silently inventing times
+            self._warned = True
+            self.info.setText(f"⚠ {self.meta.n_frames:,} frames, but the file stores no frame times. Enter the "
+                              "time between frames above so time axes and labels are right, or press OK again "
+                              "to count each frame as 1 ps.")
+            self.info.setMinimumHeight(self.info.heightForWidth(max(self.info.width(), 300)))
+            self.resize(self.width(), max(self.height(), self.sizeHint().height()))   # room for the message
+            self.dt.setFocus()
+            return
         self.accept()
 
 
@@ -322,3 +360,77 @@ class MatchTimingDialog(QDialog):
                           f"Image k is shown at t = {tm[0]:g} + k × {tm[1]:g} ps, where k is the image's "
                           + ("file number." if self.index_from == "filename" else "position (0, 1, 2, …)."))
         self.info.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+
+class RepDialog(QDialog):
+    """One representation of a molecule panel: which atoms, how they are drawn and coloured."""
+
+    EXAMPLES = ("protein", "protein and not name H*", "nucleic", "resname LIG", "resid 10:25",
+                "around 5 resname LIG", "not (protein or resname HOH SOL)")
+
+    def __init__(self, win, scene, rep: dict | None = None, parent=None):
+        super().__init__(parent or win)
+        from mdmovie.mol.structure import COLOR_SCHEMES, STYLES
+        self.scene = scene
+        self.setWindowTitle("Representation")
+        self.resize(480, 300)
+        r = rep or {"sel": "protein", "style": "cartoon", "color": "secondary structure", "custom": "#4c8bf5",
+                    "scale": 1.0}
+        self.sel = QComboBox()
+        self.sel.setEditable(True)
+        self.sel.addItems(self.EXAMPLES)
+        self.sel.setCurrentText(r.get("sel", "protein"))
+        self.sel.setToolTip("MDAnalysis selection language")
+        self.count = QLabel()
+        self.count.setWordWrap(True)
+        self.count.setStyleSheet("color: gray")
+        self.style = QComboBox()
+        self.style.addItems(STYLES)
+        self.style.setCurrentText(r.get("style", "cartoon"))
+        self.scheme = QComboBox()
+        self.scheme.addItems(COLOR_SCHEMES)
+        self.scheme.setCurrentText(r.get("color", "element"))
+        self.custom = ColorButton(r.get("custom") or "#4c8bf5")
+        self.scale = CompactDoubleSpinBox()
+        self.scale.setRange(0.1, 10)
+        self.scale.setSingleStep(0.1)
+        self.scale.setValue(float(r.get("scale", 1.0) or 1.0))
+        self.scale.setToolTip("Thickness of sticks, tubes and ribbons; radius of spheres")
+        form = QFormLayout(self)
+        form.addRow("Atoms", self.sel)
+        form.addRow("", self.count)
+        form.addRow("Drawn as", self.style)
+        form.addRow("Coloured by", self.scheme)
+        form.addRow("Single colour", self.custom)
+        form.addRow("Size", self.scale)
+        self.bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.bb.accepted.connect(self.accept)
+        self.bb.rejected.connect(self.reject)
+        form.addRow(self.bb)
+        self.sel.currentTextChanged.connect(self._check)
+        self.style.currentTextChanged.connect(self._check)
+        self.scheme.currentTextChanged.connect(self._check)
+        self._check()
+
+    def _check(self, *_):
+        """Count the selected atoms as the user types, so a wrong selection is caught here."""
+        self.custom.setEnabled(self.scheme.currentText() == "single colour")
+        ok, text = True, ""
+        if self.scene is not None:
+            try:
+                atoms = self.scene.u.select_atoms(self.sel.currentText().strip() or "all")
+                text = f"{len(atoms):,} atoms in {atoms.residues.n_residues:,} residues"
+                if self.style.currentText() in ("cartoon", "tube"):
+                    n = len(atoms.select_atoms("(protein and name CA) or (nucleic and name P)"))
+                    text += f" · {n:,} backbone residues" if n else " · no protein or nucleic backbone to draw"
+                if self.style.currentText() in ("cartoon", "tube") and self.scheme.currentText() == "element":
+                    text += " · 'element' has no meaning for a backbone: it is drawn grey"
+            except Exception as e:
+                ok, text = False, f"⚠ {e}"
+        self.count.setText(text)
+        self.bb.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
+
+    def rep(self) -> dict:
+        return {"sel": self.sel.currentText().strip() or "all", "style": self.style.currentText(),
+                "color": self.scheme.currentText(), "custom": self.custom.color or "#4c8bf5",
+                "scale": round(self.scale.value(), 3)}

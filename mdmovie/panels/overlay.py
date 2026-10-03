@@ -9,6 +9,7 @@ from mdmovie.panels.base import Prop
 
 MARKER_SHAPES = ("circle", "square", "diamond", "triangle", "star", "cross")
 TRAIL_STYLES = ("fading line", "line", "fading dots", "none")
+_HAS_TRAIL = ("trail", *TRAIL_STYLES[:-1])
 
 
 def trail_props(section: str) -> list[Prop]:
@@ -20,12 +21,16 @@ def trail_props(section: str) -> list[Prop]:
         Prop("marker_color", "color", "#ff3b30", "Point colour", section=section),
         Prop("marker_edge", "color", "#ffffff", "Point outline", section=section),
         Prop("trail", "choice", "fading line", "Trail", TRAIL_STYLES, section=section),
-        Prop("trail_length", "int", 40, "Trail length (data points, 0 = all)", maximum=10**7, section=section),
-        Prop("trail_color", "optcolor", "", "Trail colour (blank = point colour)", section=section),
-        Prop("trail_width", "float", 2.5, "Trail width (px)", minimum=0.1, maximum=50, step=0.5, section=section),
+        Prop("trail_length", "int", 40, "Trail length (data points, 0 = all)", maximum=10**7, section=section,
+             when=(_HAS_TRAIL,)),
+        Prop("trail_color", "optcolor", "", "Trail colour (blank = point colour)", section=section,
+             when=(_HAS_TRAIL,)),
+        Prop("trail_width", "float", 2.5, "Trail width (px)", minimum=0.1, maximum=50, step=0.5, section=section,
+             when=(_HAS_TRAIL,)),
         Prop("path", "bool", False, "Show whole path faintly", section=section),
-        Prop("path_color", "color", "#ffffff", "Path colour", section=section),
-        Prop("path_alpha", "float", 0.35, "Path opacity", minimum=0, maximum=1, step=0.05, section=section),
+        Prop("path_color", "color", "#ffffff", "Path colour", section=section, when=(("path", True),)),
+        Prop("path_alpha", "float", 0.35, "Path opacity", minimum=0, maximum=1, step=0.05, section=section,
+             when=(("path", True),)),
     ]
 
 

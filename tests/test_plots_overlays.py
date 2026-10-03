@@ -13,7 +13,7 @@ from mdmovie.core import layout as L
 from mdmovie.core.project import Project
 from mdmovie.panels import Series
 from mdmovie.panels.base import RenderContext
-from mdmovie.panels.cvmap_panel import cv_data, free_energy
+from mdmovie.panels.cvmap_panel import cv_data, fes_columns, free_energy, load_fes
 from mdmovie.panels.mpl_common import STYLES, style_list
 from mdmovie.panels.series_data import series_time_info
 from mdmovie.render.compositor import cell_rects, render_frame
@@ -184,6 +184,49 @@ def test_cvmap_panel_point_moves(tmp_path):
         m = (a[..., 0] > 220) & (a[..., 1] < 60) & (a[..., 2] > 220)
         return np.nonzero(m)[1].mean()
     assert magenta_x(5) < magenta_x(30) < magenta_x(55)   # x grows linearly in the COLVAR
+
+
+def write_fes(path, xs, ys):
+    """A PLUMED sum_hills style grid: x runs fastest, blank line between y blocks."""
+    with open(path, "w") as f:
+        f.write("#! FIELDS phi psi file.free der_phi der_psi\n")
+        for yv in ys:
+            for xv in xs:
+                f.write(f"{xv:.6f} {yv:.6f} {(xv - 5) ** 2 + (yv - 6) ** 2 - 40:.6f} 0 0\n")
+            f.write("\n")
+
+
+def test_load_fes_grid(tmp_path):
+    xs, ys = np.linspace(-2, 12, 29), np.linspace(0, 10, 21)
+    write_fes(tmp_path / "fes.dat", xs, ys)
+    gx, gy, f, xn, yn = load_fes(str(tmp_path / "fes.dat"))
+    assert f.shape == (21, 29) and (xn, yn) == ("phi", "psi")
+    assert np.allclose(gx, xs) and np.allclose(gy, ys)
+    assert np.nanmin(f) == 0 and np.unravel_index(np.argmin(f), f.shape) == (12, 14)   # y = 6, x = 5
+    assert fes_columns("0, 1,2") == (0, 1, 2)
+    with pytest.raises(ValueError):
+        fes_columns("0,1")
+    with pytest.raises(ValueError):
+        load_fes(str(tmp_path / "fes.dat"), (0, 1, 7))
+
+
+def test_cvmap_fes_file_sets_the_scale(tmp_path):
+    write_colvar(tmp_path / "COLVAR")                       # x 1..9, y 5..8
+    write_fes(tmp_path / "fes.dat", np.linspace(-2, 12, 29), np.linspace(0, 10, 21))
+    pr = Project()
+    pr.path = str(tmp_path / "p.mdmovie.json")
+    cv = pr.add_panel("cvmap")
+    cv.series = [Series("", DATA_FILE, {"path": str(tmp_path / "COLVAR")})]
+    cv.props.update(bg_mode="free energy file", fes_file=str(tmp_path / "fes.dat"))
+    pr.layout = L.Leaf(cv.id)
+    runner.compute_all(pr)
+    render_frame(pr, 5, 0.5)
+    ax = cv._renderer.ax
+    assert np.allclose(ax.get_xlim(), (-2, 12)) and np.allclose(ax.get_ylim(), (0, 10))   # the whole surface
+    assert len(ax.collections) > 2                           # filled surface + contours + trail
+
+    cv.props.update(fes_file=str(tmp_path / "missing.dat"))  # a bad file is a message, not a crash
+    render_frame(pr, 5, 0.5)
 
 
 def test_cvmap_single_column_plots_against_time(tmp_path):

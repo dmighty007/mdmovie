@@ -83,10 +83,11 @@ QToolBar QToolButton:pressed {{ background: {c.accent_soft}; }}
 QToolBar QToolButton::menu-indicator {{ image: none; width: 0; }}
 QToolButton#primary {{ background: {c.accent}; color: {c.accent_text}; font-weight: 600; padding: 6px 14px; }}
 QToolButton#primary:hover {{ background: {c.accent}; border-color: {c.accent}; }}
+QLabel#toolbarCaption {{ color: {c.faint}; font-size: 10px; font-weight: 700; padding: 0 4px 0 6px; }}
 
 /* docks */
-QDockWidget {{ titlebar-close-icon: none; }}
-QDockWidget::title {{ background: {c.window}; padding: 9px 12px 7px 12px; text-align: left; }}
+QDockWidget {{ titlebar-close-icon: none; color: {c.muted}; font-size: 11px; font-weight: 700; }}
+QDockWidget::title {{ background: {c.panel}; padding: 11px 14px 6px 14px; text-align: left; }}
 QDockWidget > QWidget {{ background: {c.panel}; }}
 QMainWindow::separator {{ background: {c.border}; width: 1px; height: 1px; }}
 QSplitter::handle {{ background: {c.border}; }}
@@ -126,7 +127,8 @@ QPushButton {{ background: {c.raised}; border: 1px solid {c.border}; border-radi
 QPushButton:hover {{ border-color: {c.faint}; }}
 QPushButton:pressed {{ background: {c.accent_soft}; }}
 QPushButton:default, QPushButton#primary {{ background: {c.accent}; color: {c.accent_text}; border-color: {c.accent}; font-weight: 600; }}
-QPushButton:disabled {{ color: {c.faint}; }}
+QPushButton:disabled {{ color: {c.faint}; background: {c.raised}; border-color: {c.border}; font-weight: 400; }}
+QPushButton#colorButton {{ text-align: left; padding: 5px 8px; background: {c.input}; }}
 QToolButton {{ border-radius: 6px; padding: 4px; }}
 QToolButton:hover {{ background: {c.raised}; }}
 QToolButton:checked {{ background: {c.accent_soft}; }}
@@ -148,7 +150,9 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 /* progress + status */
 QProgressBar {{ background: {c.input}; border: 1px solid {c.border}; border-radius: 5px; height: 10px; text-align: center; font-size: 10px; }}
 QProgressBar::chunk {{ background: {c.accent}; border-radius: 4px; }}
-QStatusBar {{ background: {c.window}; border-top: 1px solid {c.border}; color: {c.muted}; }}
+QStatusBar {{ background: {c.window}; border-top: 1px solid {c.border}; color: {c.muted}; min-height: 24px; }}
+QLabel#statusInfo {{ color: {c.muted}; padding: 0 10px; }}
+QLabel#emptyHint {{ color: {c.faint}; border: 1px dashed {c.border}; border-radius: 6px; padding: 10px; }}
 QStatusBar::item {{ border: none; }}
 
 /* inspector */

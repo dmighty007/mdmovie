@@ -91,6 +91,9 @@ class TimelineWidget(QWidget):
                 p.drawText(QRectF(x + 3, 0, 60, RULER_H - 4), int(Qt.AlignmentFlag.AlignVCenter), f"{fr}")
         p.setPen(QPen(QColor(C.muted)))
         p.drawText(QRectF(12, 0, LABEL_W - 16, RULER_H), int(Qt.AlignmentFlag.AlignVCenter), "SYNC GROUPS")
+        p.setPen(QPen(QColor(C.faint)))
+        p.drawText(QRectF(12, 0, LABEL_W - 20, RULER_H),
+                   int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight), "frame")
 
         n = pr.n_frames
         end_x = self.x_of(n)
@@ -137,15 +140,21 @@ class TimelineWidget(QWidget):
             p.drawText(bar.adjusted(8, 0, -6, 0), int(Qt.AlignmentFlag.AlignVCenter),
                        p.fontMetrics().elidedText(txt, Qt.TextElideMode.ElideRight, int(bar.width() - 14)))
 
-        # playhead: line + handle on the ruler
+        # playhead: line + a pill on the ruler that shows the current frame (it would hide a tick label anyway)
         x = self.x_of(self.win.frame)
         p.setPen(QPen(QColor(C.accent), 1.5))
         p.drawLine(QPointF(x, RULER_H - 2), QPointF(x, self.height()))
+        p.setFont(bold)
+        text = str(self.win.frame)
+        w = max(22, p.fontMetrics().horizontalAdvance(text) + 12)
+        pill = QRectF(min(max(x - w / 2, LABEL_W + 1), self.width() - w - 1), 3, w, RULER_H - 8)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(C.accent))
-        head = QPolygonF([QPointF(x - 6, 3), QPointF(x + 6, 3), QPointF(x + 6, RULER_H - 8),
-                          QPointF(x, RULER_H - 2), QPointF(x - 6, RULER_H - 8)])
-        p.drawPolygon(head)
+        p.drawRoundedRect(pill, 4, 4)
+        p.drawPolygon(QPolygonF([QPointF(x - 4, pill.bottom() - 1), QPointF(x + 4, pill.bottom() - 1),
+                                 QPointF(x, RULER_H - 1)]))
+        p.setPen(QPen(QColor(C.accent_text)))
+        p.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
 
     # --- mouse ----------------------------------------------------------------------------
     def mousePressEvent(self, e):

@@ -34,6 +34,8 @@ apply_theme(app, os.environ.get("MDMOVIE_THEME", "dark"))
 
 from MDAnalysisTests.datafiles import DCD, PSF  # noqa: E402
 
+warnings.filterwarnings("ignore")   # again: importing MDAnalysis put its own filters in front
+
 from mdmovie.core import crop as C  # noqa: E402
 from mdmovie.core import layout as L  # noqa: E402
 from mdmovie.core.project import Overlay  # noqa: E402
@@ -250,6 +252,7 @@ def main():
     render_ca_frames(mda.Universe(PSF, DCD), frames_dir, size=(1800, 1400), view=(80, 62))  # generous margins
 
     MainWindow._confirm_discard = lambda self: True
+    quickstart_section()
     win = MainWindow()
     win.resize(1440, 880)
     win.show()
@@ -381,6 +384,7 @@ def main():
     timing_diagram()
     style_grid(win.project, tid["rmsd"])
     fes_section(win, work, tid)
+    molecule_section(win, tid)
     win.analysis.shutdown()
 
 
@@ -486,6 +490,96 @@ def fes_section(win, work, tid):
     export_movie(win.project, ExportOptions(os.path.join(OUT, "fes_demo.gif"), scale=0.32, gif_step=4,
                                             stop=320, gif_colors=96))
     print("wrote images/fes_demo.gif")
+
+
+def molecule_section(win, tid):
+    """The molecule panel: a trajectory drawn by the built-in renderer instead of an image sequence."""
+    from mdmovie.mol.render import View, render_molecule, rotated
+    from mdmovie.mol.structure import get_scene
+    turn = rotated([1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0], 0.9, 0.35)
+
+    def build(p):
+        p.groups = {k: v for k, v in p.groups.items() if k == "g1"}
+        for pid in list(p.panels):
+            p.remove_panel(pid)
+        mol = p.add_panel("molecule", "Protein")
+        mol.props.update(traj=tid["traj"], rotation=turn, zoom=1.15)
+        mol.props["reps"].append({"sel": "resid 120:160 and not name H*", "style": "licorice", "color": "element",
+                                  "custom": "#4c8bf5", "scale": 1.0})
+        plot = p.add_panel("plot", "RMSD")
+        plot.series = [Series(tid["traj"], "RMSD", {"select": "backbone"}, label="Backbone RMSD")]
+        plot.props.update(show_value=True, value_format="{value:.2f} Å", title="Backbone RMSD")
+        p.layout = L.Split("h", [0.6, 0.4], [L.Leaf(mol.id), L.Leaf(plot.id)])
+        p.overlays = []
+        tid["mol"] = mol.id
+    win.apply("Molecule demo", build)
+    wait_analysis(win)
+    win.set_frame(45)
+    win.select(("panel", tid["mol"]))
+    pump()
+    win.canvas.render_now()
+    cell = next(r for _, pid, r in win.canvas.cells() if pid == tid["mol"]).toRect()
+    cell.translate(win.canvas.mapTo(win, QPoint(0, 0)))
+    save(annotate(win.grab().toImage(), [(rect_of(group_box(win, "Molecule"), win), 1), (cell, 2)]),
+         "14_molecule.png", 1440)
+
+    pr = win.project
+    styles = [
+        ("cartoon · secondary structure", [{"sel": "protein", "style": "cartoon", "color": "secondary structure"}]),
+        ("cartoon · rainbow + licorice", [{"sel": "protein", "style": "cartoon", "color": "rainbow"},
+                                          {"sel": "resid 120:160 and not name H*", "style": "licorice",
+                                           "color": "element"}]),
+        ("ball and stick · element", [{"sel": "protein and not name H*", "style": "ball and stick",
+                                       "color": "element"}]),
+        ("spheres · chain", [{"sel": "protein", "style": "spheres", "color": "single colour",
+                              "custom": "#4c8bf5"}]),
+    ]
+    view = View(np.array(turn).reshape(3, 3), 1.1)
+    tiles = []
+    for _, reps in styles:
+        img = QImage(520, 420, QImage.Format.Format_ARGB32)
+        img.fill(QColor("white"))
+        p = QPainter(img)
+        p.drawImage(0, 0, render_molecule(get_scene(pr, tid["traj"], reps, "fit to first frame",
+                                                    "protein and name CA"), 45, 520, 420, view))
+        p.end()
+        tiles.append(img)
+    save(side_by_side(tiles, [name for name, _ in styles]), "15_molecule_styles.png")
+    export_movie(pr, ExportOptions(os.path.join(OUT, "molecule_demo.gif"), scale=0.34, gif_step=2, gif_colors=128))
+    print("wrote images/molecule_demo.gif")
+
+
+def quickstart_section():
+    """`mdmovie adk.psf adk.dcd`: the start screen, the ready-made movie, and the README's hero GIF."""
+    from mdmovie.mol.render import rotated
+    win = MainWindow()
+    win.resize(1440, 880)
+    win.show()
+    pump()
+    card = win.canvas.welcome
+    save(win.grab().toImage().copy(rect_of(card, win, 18)), "16_start.png")
+
+    win.start_from_trajectory([PSF, DCD])
+    wait_analysis(win)
+    pr = win.project
+    mol = next(p for p in pr.panels.values() if p.KIND == "molecule")
+    turn = rotated([1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0], 0.9, 0.35)
+    win.apply("View", lambda p: p.panels[mol.id].props.update(rotation=turn, zoom=1.1, smooth=3))
+    tid = next(iter(pr.trajectories))
+    win.select(("traj", tid))
+    win.set_frame(int(pr.n_frames * 0.7))
+    pump()
+    win.canvas.render_now()
+    pump()
+    save(annotate(win.grab().toImage(), [(rect_of(win.canvas, win, -30), 1),
+                                         (rect_of(group_box(win, "System"), win), 2),
+                                         (rect_of(group_box(win, "Reading"), win), 3)]), "17_quickstart.png", 1440)
+    # small enough to load quickly on GitHub (~1 MB): 38 % of 1080p, every third frame, 64 colours
+    export_movie(pr, ExportOptions(os.path.join(OUT, "quickstart.gif"), scale=0.38, gif_step=3, gif_colors=64))
+    print("wrote images/quickstart.gif")
+    win.undo.setClean()
+    win.analysis.shutdown()
+    win.close()
 
 
 def _button(dlg, text) -> QRect:

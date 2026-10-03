@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
         self.resize(1500, 920)
         self.setWindowIcon(icons.icon("film", "accent", 64))
         self.setUnifiedTitleAndToolBarOnMac(True)
+        self.setAcceptDrops(True)              # drop topology + trajectory files (or a project) on the window
         self.project = Project()
         self.frame = 0
         self.selection = None
@@ -113,7 +114,11 @@ class MainWindow(QMainWindow):
                              | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.resizeDocks([left, right], [240, 400], Qt.Orientation.Horizontal)
 
-        # status bar: analysis progress
+        # status bar: what the movie is (left), analysis progress (right)
+        self.statusBar().setSizeGripEnabled(False)
+        self.status_info = QLabel()
+        self.status_info.setObjectName("statusInfo")
+        self.statusBar().addWidget(self.status_info)
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(180)
         self.progress.setTextVisible(False)
@@ -255,7 +260,13 @@ class MainWindow(QMainWindow):
         undo.setEnabled(False)
         redo.setEnabled(False)
         tb.addSeparator()
+        caption = QLabel("ADD")
+        caption.setObjectName("toolbarCaption")
+        caption.setToolTip("Add a panel to the selected (or first empty) cell")
+        tb.addWidget(caption)
         add("image", "Frames", lambda: self.new_panel("image"), "Add an image-sequence panel (protein frames)")
+        add("molecule", "Molecule", lambda: self.new_panel("molecule"),
+            "Add a molecule panel: draw a trajectory here (cartoon, sticks, spheres) instead of loading images")
         add("plot", "Plot", lambda: self.new_panel("plot"), "Add a plot panel (analysis time series)")
         add("heatmap", "Heatmap", lambda: self.new_panel("heatmap"), "Add a heatmap panel (e.g. DSSP)")
         add("cvmap", "CV map", lambda: self.new_panel("cvmap"),
@@ -337,6 +348,15 @@ class MainWindow(QMainWindow):
             self.inspector.refresh_status()
         self.analysis.ensure(self.project)
         self._update_title()
+        self.update_status()
+
+    def update_status(self):
+        """Left side of the status bar: output size, length and how far the preview is scaled down."""
+        pr = self.project
+        n = pr.n_frames
+        zoom = self.canvas.display_rect().width() / pr.size[0]
+        self.status_info.setText(f"{pr.size[0]} × {pr.size[1]} px   ·   {pr.fps:g} fps   ·   {n} frames "
+                                 f"({n / pr.fps:.2f} s)   ·   preview {zoom:.0%}")
 
     def _validate_selection(self):
         s, pr = self.selection, self.project
@@ -539,6 +559,10 @@ class MainWindow(QMainWindow):
             if d:
                 remember_dir(d)
                 self.set_image_folder(pid, d)
+        elif panel.KIND == "molecule":
+            tid = next(iter(self.project.trajectories), None) or self.load_trajectory()
+            if tid:
+                self.set_molecule_trajectory(pid, tid)
         elif panel.HAS_SERIES:
             self.edit_series(pid, None)
 
@@ -647,6 +671,56 @@ class MainWindow(QMainWindow):
                                             overlay=True)
             self.apply("Calibrate overlay", fn)
 
+    # --- molecule panels ------------------------------------------------------------------
+    def set_molecule_trajectory(self, pid, tid):
+        if tid == "__new__":
+            tid = self.load_trajectory()
+        if tid:
+            self.apply("Choose trajectory", lambda p: p.panels[pid].props.__setitem__("traj", tid))
+        self.inspector.rebuild()
+
+    def _molecule_scene(self, pid):
+        """The panel's loaded scene (None if it has no trajectory or it cannot be read)."""
+        try:
+            return self.project.panels[pid].scene(self.project)
+        except Exception as e:
+            self.statusBar().showMessage(f"Cannot read the trajectory: {e}", 8000)
+            return None
+
+    def edit_rep(self, pid, index):
+        from mdmovie.ui.dialogs import RepDialog
+        panel = self.project.panels[pid]
+        if panel.trajectory(self.project) is None:
+            QMessageBox.information(self, "Representation", "Choose a trajectory for this panel first.")
+            return
+        dlg = RepDialog(self, self._molecule_scene(pid), panel.props["reps"][index] if index is not None else None)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        rep = dlg.rep()
+
+        def fn(p):
+            reps = p.panels[pid].props["reps"]
+            if index is None:
+                reps.append(rep)
+            else:
+                reps[index] = rep
+        self.apply("Edit representation" if index is not None else "Add representation", fn)
+
+    def remove_rep(self, pid, index):
+        self.apply("Remove representation", lambda p: p.panels[pid].props["reps"].pop(index))
+
+    def set_molecule_view(self, pid, name):
+        """A named axis view ('front', 'side', 'top'), or None to also re-centre and zoom to fit."""
+        from mdmovie.mol.render import AXIS_VIEWS
+
+        def fn(p):
+            panel = p.panels[pid]
+            if name is None:
+                panel.props.update(panel.reset_view())
+            else:
+                panel.props["rotation"] = [float(v) for v in AXIS_VIEWS[name].ravel()]
+        self.apply("Reset view" if name is None else f"{name.capitalize()} view", fn, structural=False)
+
     # --- trajectories and analysis --------------------------------------------------------
     def load_trajectory(self):
         """Ask for topology + trajectory files; returns the new trajectory id (or None)."""
@@ -655,10 +729,16 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None
         top, trajs, name = dlg.values()
+        dt, whole = dlg.dt.value(), dlg.whole.isChecked()
         box = {}
 
         def fn(p):
-            box["id"] = p.add_trajectory(top, trajs, name).id
+            t = p.add_trajectory(top, trajs, name)
+            t.dt, t.whole = dt, whole
+            box["id"] = t.id
+            for panel in p.panels.values():       # molecule panels still waiting for a trajectory take this one
+                if panel.KIND == "molecule" and panel.props["traj"] not in p.trajectories:
+                    panel.props["traj"] = t.id
         self.apply("Load trajectory", fn)
         remember_dir(top)
         return box["id"]
@@ -666,17 +746,19 @@ class MainWindow(QMainWindow):
     def edit_trajectory(self, tid):
         from mdmovie.ui.dialogs import TrajectoryDialog
         t = self.project.trajectories[tid]
-        dlg = TrajectoryDialog(self, t.topology, t.trajectories, t.name)
+        dlg = TrajectoryDialog(self, t.topology, t.trajectories, t.name, t.dt, t.whole)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             top, trajs, name = dlg.values()
+            dt, whole = dlg.dt.value(), dlg.whole.isChecked()
 
             def fn(p):
                 tr = p.trajectories[tid]
-                tr.topology, tr.trajectories, tr.name = top, trajs, name
+                tr.topology, tr.trajectories, tr.name, tr.dt, tr.whole = top, trajs, name, dt, whole
             self.apply("Change trajectory", fn)
 
     def remove_trajectory(self, tid):
         used = [p.name for p in self.project.panels.values() for s in p.series if s.traj == tid]
+        used += [p.name for p in self.project.panels.values() if p.props.get("traj") == tid]
         if used and QMessageBox.question(
                 self, "Remove trajectory", f"Used by {', '.join(sorted(set(used)))}. Remove anyway?"
         ) != QMessageBox.StandardButton.Yes:
@@ -801,6 +883,97 @@ class MainWindow(QMainWindow):
             return
         self.open_project(path)
         self.statusBar().showMessage("Demo loaded — analysis runs in the background", 6000)
+
+    # --- starting from trajectory files -------------------------------------------------------
+    def start_from_trajectory(self, files: list[str] | None = None) -> bool:
+        """A new movie (molecule, RMSD and Rg plots, time label) from topology + trajectory files, given or
+        chosen in the trajectory dialog."""
+        from mdmovie.core.quickstart import split_files, trajectory_movie
+        if not self._confirm_discard():
+            return False
+        if files:
+            try:
+                top, trajs = split_files(files)
+            except ValueError as e:
+                QMessageBox.warning(self, "Start from a trajectory", str(e))
+                return False
+            name, dt, whole = "", 0.0, True
+        else:
+            from mdmovie.ui.dialogs import TrajectoryDialog
+            dlg = TrajectoryDialog(self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return False
+            (top, trajs, name), dt, whole = dlg.values(), dlg.dt.value(), dlg.whole.isChecked()
+        self.statusBar().showMessage(f"Reading {os.path.basename(top)}…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            pr = Project()
+            tid = trajectory_movie(pr, top, trajs, name, dt, whole)
+        except Exception as e:
+            QMessageBox.critical(self, "Cannot load trajectory", f"{type(e).__name__}: {e}")
+            self.statusBar().clearMessage()
+            return False
+        finally:
+            QApplication.restoreOverrideCursor()
+        remember_dir(top)
+        self._set_project(pr)
+        self.undo.resetClean()                 # a new, unsaved project
+        self._update_title()
+        meta = pr.trajectories[tid].meta(pr.resolve_path)
+        self.statusBar().showMessage(
+            f"{meta.n_frames:,} frames, {meta.n_atoms:,} atoms. Drag the molecule to turn it; analysis runs in "
+            "the background." + ("" if meta.timed else " The file stores no frame times: set the time between "
+                                 "frames on the trajectory's page."), 12000)
+        return True
+
+    def add_trajectory_files(self, files: list[str]) -> None:
+        """Dropped topology + trajectory files on a project that already has content: add them as a trajectory
+        (molecule panels still waiting for one take it)."""
+        from mdmovie.core.quickstart import split_files
+        try:
+            top, trajs = split_files(files)
+            from mdmovie.sources.trajectory import TrajectorySource
+            TrajectorySource("tmp", "", top, trajs).meta(lambda p: p)
+        except Exception as e:
+            QMessageBox.warning(self, "Add trajectory", f"{e}")
+            return
+        box = {}
+
+        def fn(p):
+            t = p.add_trajectory(top, trajs)
+            box["id"] = t.id
+            for panel in p.panels.values():
+                if panel.KIND == "molecule" and panel.props["traj"] not in p.trajectories:
+                    panel.props["traj"] = t.id
+        self.apply("Load trajectory", fn)
+        remember_dir(top)
+        self.select(("traj", box["id"]))
+        self.statusBar().showMessage("Trajectory added: pick it in a molecule panel or a plot series.", 8000)
+
+    @staticmethod
+    def _dropped_files(e) -> list[str]:
+        from mdmovie.core.quickstart import PROJECT_EXT, is_md_file
+        md = e.mimeData()
+        files = [u.toLocalFile() for u in md.urls() if u.isLocalFile()] if md.hasUrls() else []
+        return files if files and all(is_md_file(f) or f.lower().endswith(PROJECT_EXT) for f in files) else []
+
+    def dragEnterEvent(self, e):
+        if self._dropped_files(e):
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        files = self._dropped_files(e)
+        if not files:
+            return
+        e.acceptProposedAction()
+        projects = [f for f in files if f.lower().endswith(".json")]
+        # let the drop finish before opening dialogs
+        if projects:
+            QTimer.singleShot(0, lambda: self._confirm_discard() and self.open_project(projects[0]))
+        elif self.project.panels:
+            QTimer.singleShot(0, lambda: self.add_trajectory_files(files))
+        else:
+            QTimer.singleShot(0, lambda: self.start_from_trajectory(files))
 
     def save(self) -> bool:
         if not self.project.path:

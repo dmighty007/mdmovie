@@ -6,6 +6,8 @@ In about 15 minutes you will build this: the protein moving on the left, the RMS
 
 The tutorial uses the adenylate kinase (AdK) trajectory that ships with **MDAnalysisTests**, so you can follow along before touching your own data. Every step works the same way with your own files.
 
+> **In a hurry?** `mdmovie md.tpr md.xtc` turns your own trajectory into a ready-made movie in one step: see the box in [step 1](#1-install-and-start).
+
 **Contents**
 
 1. [Install and start](#1-install-and-start)
@@ -35,7 +37,23 @@ mdmovie
 
 `[demo]` also installs MDAnalysisTests, which provides the example trajectory. From a source checkout, use `pip install -e ".[test]"` instead.
 
-**Before you start, render your protein frames.** The app does not draw molecules itself. It arranges frames you have already rendered, which keeps the visual quality of your favourite viewer:
+> **In a hurry? Start from your own trajectory.**
+>
+> ```bash
+> mdmovie --example                # the AdK example below, ready-made
+> mdmovie md.tpr md.xtc            # your own: or mdmovie system.psf run1.dcd run2.dcd
+> mdmovie render md.tpr md.xtc md.mp4   # straight to a video file, no display needed
+> ```
+>
+> ![Start screen](images/16_start.png)
+>
+> You get a finished first draft: the molecule drawn from the trajectory, RMSD and radius-of-gyration plots that grow in step, and a time label, played in 5–30 s. Dropping the files on the window or pressing *Start from a trajectory…* on the start screen does the same. Files can be given in any order; the richest topology (TPR, PSF, PRMTOP before GRO or PDB) is used as the topology. Everything that follows in this tutorial explains how to change that draft.
+>
+> ![A ready-made movie](images/17_quickstart.png)
+>
+> **①** the movie: molecule, RMSD, Rg and a time label. **②** click the trajectory to see what the system contains, handy for writing selections. **③** molecules split by the periodic box are made whole. In the terminal, <kbd>Ctrl+C</kbd> closes the window (it asks about unsaved changes); press it again to quit at once.
+
+**The molecule: draw it here, or bring rendered frames.** The **molecule panel** draws the trajectory itself (see [step 4](#or-draw-the-molecule-here-the-molecule-panel)). If you prefer the look of your favourite viewer, render one image per frame there and arrange those instead:
 
 | Viewer | How to write one image per frame |
 |---|---|
@@ -107,6 +125,39 @@ Don't want to do the arithmetic? You can fill this in automatically in step 6.
 
 ---
 
+### Or draw the molecule here: the molecule panel
+
+You don't need to render frames first. **Add › Molecule panel** (or *Molecule* in the toolbar) draws a loaded trajectory itself, frame by frame, in step with everything else. It asks for a trajectory if none is loaded yet (see step 6).
+
+![Molecule panel](images/14_molecule.png)
+
+- **①** **Molecule**: pick the **Trajectory**, then list what to draw. Each *representation* is a selection of atoms, a way to draw it and a colouring. A new panel starts with a cartoon of the protein or nucleic acid plus ball-and-stick for everything else that isn't water or ions. **Add** or double-click to edit one; the dialog counts the selected atoms as you type, so a wrong selection shows up immediately.
+- **②** **The view**: click the panel to select it, then **drag** in the preview to rotate, **Shift-drag** to move and **scroll** to zoom. *Front*, *Side*, *Top* and *Reset view* are in the inspector. The view is saved with the project and can be undone like any edit.
+
+![Representations](images/15_molecule_styles.png)
+
+| Drawn as | What you get |
+|---|---|
+| cartoon | helices as ribbons, strands as arrows, loops as a thin tube; nucleic acids as a backbone tube |
+| tube | a uniform tube along the backbone |
+| licorice, ball and stick, lines | bonds from the topology, or guessed from distances if it has none |
+| spheres | van der Waals spheres |
+
+Colour by *secondary structure*, *element*, *chain*, *rainbow* (N to C terminus) or a *single colour*.
+
+The **Motion** section controls what moves:
+
+| Setting | Effect |
+|---|---|
+| Remove overall motion | *fit to first frame* removes tumbling and drift, so only internal motion is left; *centre only* keeps rotation; *none* shows raw coordinates |
+| Fit on | the atoms used for that fit (default: protein Cα) |
+| Smoothing | averages each frame with its neighbours to calm thermal jitter |
+| Secondary structure from | *every frame* (the default) lets helices and strands form and melt as the movie plays; with *Smoothing* on, each residue takes its most frequent state over the same window, so the cartoon doesn't flicker. *first frame* freezes the cartoon of the starting structure |
+
+Secondary structure comes from DSSP, and from Cα distances alone for models without a full backbone. Drawing is done in software, so the preview, the export and `mdmovie render` on a machine without a display give the same picture. A few hundred residues as a cartoon take a few hundredths of a second per frame; many thousands of atoms as sticks or spheres are slower, so select only what you need.
+
+![Molecule panel movie](images/molecule_demo.gif)
+
 ## 5. Crop to a fixed aspect ratio
 
 Rendered frames usually have wide empty margins. **Double-click** the protein panel (or press **Crop…** in the Inspector):
@@ -129,7 +180,9 @@ Choose **Add › Load trajectory…** (<kbd>Ctrl+T</kbd>):
 - **Topology**: PSF, PDB, GRO, PRMTOP, TPR, …
 - **Trajectory files**: DCD, XTC, TRR, NC, …. Several files are joined in the listed order. Leave the list empty for a multi-model PDB.
 
-The file is read with MDAnalysis when you press OK, so a wrong path shows up immediately.
+- **Periodic boundaries: Make molecules whole** (on by default): molecules split across the periodic box are joined again and kept together while frames are read, as `gmx trjconv -pbc mol -center` would do, so the molecule panel never shows bonds stretched across the screen and RMSD or Rg never jump to nonsense. Water and ions are left as stored. Untick it for trajectories you have already processed. Choosing `md.tpr` fills in `md.xtc` (or `.trr`, `.dcd`, …) from the same folder.
+
+The file is read with MDAnalysis when you press OK, so a wrong path shows up immediately. Click the trajectory in the project tree to see its time span and a **System** summary (protein residues and chains, other residue names, ions, water, box size), handy when you write selections.
 
 Now go back to the protein panel and press **Match trajectory…**. It fills in `t0` and `dt` from the trajectory so the protein and the plots line up exactly. What you enter depends on how the images are indexed:
 
@@ -143,6 +196,8 @@ The line at the bottom of the dialog spells out the resulting rule, e.g. *image 
 **Frame-wise instead:** if you rendered one image per trajectory frame (image k = frame k), you can skip the matching. Set each plot's **X axis (and sync clock)** to *frame* instead. The plot then runs on frame numbers, so it lines up with an image panel left at its default timing (`t0` = 0, `dt` = 1). For a stride, set the image panel's `dt` to the stride. Keep every panel in a sync group on the same clock: a plot in *frame* mode won't line up with an image panel that was matched in ps.
 
 ---
+
+> **No times in the file?** Some trajectories (often XTC files written by analysis scripts) store no frame times. The dialog says so and asks for the **Time between frames (ps)**; without it every frame counts as 1 ps, and time axes and labels would be wrong. You can change it later with *Change files…* on the trajectory.
 
 ## 7. Add an RMSD plot
 
@@ -283,7 +338,7 @@ Crop and fit keep working: the overlay follows the picture when you crop it.
 
 ### B. Computed from the data: the CV map panel
 
-If you don't have a picture, **Add › CV map panel** (or *CV map* in the toolbar) computes the surface itself from the same x/y data:
+If you don't have a picture, **Add › CV map panel** (or *CV map* in the toolbar) computes the surface itself from the same x/y data, or reads it from a free-energy grid file:
 
 ![CV map panel](images/11_cvmap.png)
 
@@ -291,6 +346,7 @@ If you don't have a picture, **Add › CV map panel** (or *CV map* in the toolba
 - **②** **Background**:
   - *free energy*: F = −kT ln P(x, y), from a 2-D histogram. You set the bins, **smoothing** (Gaussian, in bins), temperature, unit (kJ/mol, kcal/mol, kT), an optional cap, colormap and contour lines.
   - *density*: the probability density itself.
+  - *free energy file*: a surface you already have as numbers, e.g. `fes.dat` from `plumed sum_hills` (the right choice for biased runs such as metadynamics, where −kT ln P of the trajectory is not the free energy). Pick the file; it is drawn at its own x/y values, so it always matches the scale of your CVs — nothing to calibrate. The axes grow to show the whole surface. **File columns** picks the x, y and F columns (default `0,1,2`); the energy unit is only the colour-bar label here, the values are not converted.
   - *image file*: any picture stretched over given x/y limits.
   - *none*.
 
@@ -367,6 +423,7 @@ This file is in [`examples/presets/salt_bridge.py`](../examples/presets/salt_bri
 |---|---|
 | *No images found* | Check the **File pattern** (`*.png` does not match `.tga`). Patterns match the file name only. |
 | The protein and the plot are out of step | Use **Match trajectory…** (step 6), or set the plot's **X axis** to *frame* (image k = frame k). Otherwise check `dt`: with *order* indexing it must include the stride. The summary line under **Images** shows the time range the app assumes. |
+| The protein is torn apart, with bonds across the whole panel, or RMSD / Rg jump to huge values | The molecule crosses the periodic box. Tick **Make molecules whole** on the trajectory (it is on unless you turned it off). |
 | *⚠ missing frame numbers* | Some rendered frames are missing. The nearest existing frame is shown instead; re-render the gaps if that matters. |
 | A plot says *Error: … matched no atoms* | Fix the selection in the series dialog (double-click the series). The analysis re-runs automatically. |
 | A plot never finishes | Long trajectories take time; the status bar shows progress. Use the frame *step* in the series dialog to analyse every *n*-th frame. |

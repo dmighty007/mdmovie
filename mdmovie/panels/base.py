@@ -21,10 +21,21 @@ class Prop:
     step: float = 1
     section: str = ""
     hidden: bool = False
+    when: tuple = ()      # ((prop name, value, ...), ...): only shown while each named prop has one of the values
 
     @property
     def text(self) -> str:
         return self.label or self.name.replace("_", " ").capitalize()
+
+    def shown(self, props: dict) -> bool:
+        """Whether the inspector offers this property, given the panel's current values."""
+        return not self.hidden and all(props.get(name) in values for name, *values in self.when)
+
+
+def only_when(props: list[Prop], *condition) -> list[Prop]:
+    """Copy of a property list that is only shown while `condition` (prop name, value, ...) holds."""
+    import dataclasses
+    return [dataclasses.replace(p, when=(condition, *p.when)) for p in props]
 
 
 def with_defaults(props: list[Prop], **defaults) -> list[Prop]:
@@ -133,7 +144,7 @@ def draw_message(painter: QPainter, rect: QRectF, text: str, scale: float, color
     painter.save()
     painter.setPen(QPen(QColor(color)))
     f = QFont()
-    f.setPixelSize(max(8, int(18 * scale)))
+    f.setPixelSize(max(12, int(18 * scale)))   # still readable in a small preview
     painter.setFont(f)
     painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap), text)
     painter.restore()

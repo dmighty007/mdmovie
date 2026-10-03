@@ -1,52 +1,116 @@
+<div align="center">
+
 # MD Movie Maker
 
-Turn a molecular dynamics simulation into a multi-panel movie: your rendered protein next to live plots of RMSD, radius of gyration, secondary structure or any property you can compute with MDAnalysis. The panels can play in sync or each on its own clock.
+**Turn a molecular dynamics trajectory into a multi-panel movie:**<br>
+the molecule, live analysis plots and labels, all in step, exported to MP4 or GIF.
 
-![Example movie](https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/demo.gif)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab)](https://github.com/dmighty007/mdmovie/blob/main/pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/dmighty007/mdmovie/blob/main/LICENSE)
+[![Tutorial](https://img.shields.io/badge/docs-illustrated%20tutorial-ff6d00)](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md)
+[![MDAnalysis](https://img.shields.io/badge/built%20on-MDAnalysis-f37021)](https://www.mdanalysis.org)
 
-![A trajectory on a free-energy surface](https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/fes_demo.gif)
+<img src="https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/quickstart.gif" width="760" alt="Adenylate kinase opening, drawn from the trajectory, next to its backbone RMSD and radius of gyration">
 
-**→ New here? Follow the [illustrated tutorial](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md)**: about 15 minutes, using example data that ships with MDAnalysisTests.
+<sub>Made by one command, <code>mdmovie adk.psf adk.dcd</code>: adenylate kinase opening up, drawn from the trajectory, with backbone RMSD and radius of gyration.</sub>
 
-![The app](https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/08_sync.png)
+</div>
+
+## Try it in a minute
+
+```bash
+pip install "mdmovie[demo]"     # everything comes from pip, ffmpeg included; [demo] adds the example data
+mdmovie --example               # the movie above, open in the app: drag the protein to turn it
+```
+
+With your own simulation:
+
+```bash
+mdmovie md.tpr md.xtc                    # a ready-made movie, open in the app to adjust
+mdmovie render md.tpr md.xtc md.mp4      # or straight to MP4, with no display (clusters, scripts)
+```
+
+Any topology and trajectory that [MDAnalysis](https://userguide.mdanalysis.org/stable/formats/index.html) reads works: GROMACS, AMBER, CHARMM/NAMD, OpenMM, LAMMPS and more. Give the files in any order; several trajectories are joined in the order given. You can also drop the files on the window.
+
+You get the molecule as a cartoon, RMSD and Rg plots that grow in step with it, and a time label. Molecules split across the periodic box are joined on the fly, and long runs are sped up to about 30 s. From there, change anything: the layout, the representations, the analyses, the timing.
+
+## What else you can make
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/demo.gif" alt="Rendered protein frames next to synced RMSD, Rg and secondary-structure plots"><br>
+<b>Frames from your favourite viewer.</b> Images rendered in VMD, PyMOL or ChimeraX (here, simple stand-in drawings) next to synced RMSD, Rg and DSSP panels, with a clock in the corner.
+</td>
+<td width="50%" valign="top">
+<img src="https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/fes_demo.gif" alt="A trajectory moving on a free-energy surface with a fading trail"><br>
+<b>Trajectories on free-energy surfaces.</b> The current CV values move with a fading trail over a FES computed from PLUMED COLVAR, <code>.xvg</code> or CSV data, or over your own picture of one.
+</td>
+</tr>
+</table>
+
+<img src="https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/15_molecule_styles.png" alt="Cartoon, licorice, ball-and-stick and sphere representations drawn by the built-in renderer">
+
+<sub>The built-in renderer: cartoon by secondary structure, rainbow with licorice side chains, ball-and-stick, spheres. No OpenGL needed, so it renders on headless machines too.</sub>
 
 ## Features
 
-- **Any layout.** Split, resize and swap cells, or start from a template. Text labels, logos or inset plots can float on top as overlays. The layout is resolution-independent (1080p, 4K, square, portrait, …).
-- **Protein frames from any viewer.** Point the app at a folder of images from VMD, PyMOL or ChimeraX. It times them by file number or by position in the folder and reports missing frames.
-- **Cropping with a fixed aspect ratio.** Lock the box to 16:9, 4:3, 1:1, a custom ratio or the shape of the cell. *Auto-trim* fits the crop around the molecule across the whole trajectory.
-- **Analysis presets on an MDAnalysis Universe.**
-  - Built in: RMSD, Rg, RMSF, distances, dihedrals, H-bonds, native contacts, DSSP, atoms within a cutoff, and custom Python expressions.
-  - Several presets and trajectories can share one plot, with twin y-axes.
-  - Analyses run in the background and results are cached.
-  - [Add your own presets](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md#12-write-your-own-analysis-preset) in a few lines.
-- **Synced or independent panels.** Sync groups map movie frames to simulation time. Shift, speed up, trim, hold, hide or loop each group, and drag it on the timeline.
-- **Plot animations.** Four styles: the line grows, a marker moves, the axis scrolls, or the plot stays static. A live value readout is optional.
-- **Publication styles.** [SciencePlots](https://github.com/garrettj403/SciencePlots) styles (science, nature, ieee, notebook) and colour palettes, optional LaTeX, and fine control over ticks, frame, grid, limits, log scale, reference lines and legends. Each series gets its own line style, markers, width, opacity and fill.
-- **Trajectories on free-energy surfaces.** Draw the current CV values as a moving point with a fading trail on top of a **pre-rendered FES picture** (calibrated in one dialog), or use the **CV map** panel to compute −kT ln P from the data. PLUMED COLVAR, GROMACS .xvg and CSV files load directly, no trajectory needed.
-- **Export** to MP4 (H.264), GIF or a PNG sequence from the GUI, or headless with `mdmovie render`. The preview shows exactly what gets exported.
-- Undo/redo for every edit, and projects saved as small JSON files with relative paths.
+**The molecule**
+- Drawn in the app from the trajectory: cartoon (helix ribbons, strand arrows), tube, licorice, ball-and-stick, spheres and lines, coloured by secondary structure, element, chain or residue. Drag to rotate, scroll to zoom.
+- Helices and strands form and melt as the movie plays (DSSP, smoothed so the cartoon doesn't flicker). Overall tumbling is fitted away, and frames can be smoothed.
+- **Periodic boundaries handled:** molecules split across the box are made whole on the fly, as `gmx trjconv -pbc mol -center` does, for drawing *and* for analysis. An RMSD or Rg of a broken protein is meaningless.
+- Or bring frames rendered elsewhere as an image sequence, cropped to a fixed aspect ratio. *Auto-trim* fits the crop around the molecule over the whole run.
+
+**Analysis and plots**
+- Built-in presets run on the trajectory: RMSD, Rg, RMSF, distances, dihedrals, H-bonds, native contacts (Q), DSSP, atoms within a cutoff, custom Python expressions. They run in the background and the results are cached.
+- PLUMED COLVAR, GROMACS `.xvg` and CSV files load directly; no trajectory needed.
+- Four animation styles: the line grows, a marker moves, the axis scrolls, or the plot stays still, with an optional live value readout. Twin y-axes, several trajectories per plot.
+- Publication styles ([SciencePlots](https://github.com/garrettj403/SciencePlots) science, nature, ieee), optional LaTeX, full control over ticks, limits, log scales, reference lines and legends.
+- [Your own presets](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md#12-write-your-own-analysis-preset) take a few lines of Python.
+
+**Layout and timing**
+- Any layout: split, resize and swap cells, or start from a template. Labels, logos and inset plots float on top. Resolution-independent: 1080p, 4K, square, portrait.
+- Sync groups map movie frames to simulation time. Shift, speed up, trim, hold, hide or loop each group, so panels play in step or each on its own clock.
+
+**Output**
+- MP4 (H.264), GIF or a PNG sequence from the app, or headless with `mdmovie render`. The preview shows exactly what gets exported.
+- Undo/redo for every edit. Projects are small JSON files with relative paths, easy to version and share.
+
+## Learn more
+
+The **[illustrated tutorial](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md)** builds a complete movie step by step in about 15 minutes with the example data. It covers layouts, image sequences and cropping, timing, plot styles, free-energy surfaces and export, plus [troubleshooting](https://github.com/dmighty007/mdmovie/blob/main/docs/TUTORIAL.md#13-troubleshooting).
+
+<img src="https://raw.githubusercontent.com/dmighty007/mdmovie/main/docs/images/08_sync.png" alt="The app: project tree, canvas, inspector and timeline">
 
 ## Install
 
 ```bash
-pip install mdmovie            # or: pip install "mdmovie[demo]" to include the demo trajectory
-mdmovie                        # GUI (try File › Open demo project)
-mdmovie render my.mdmovie.json out.mp4    # render without the GUI
+pip install mdmovie            # the app
+pip install "mdmovie[demo]"    # plus MDAnalysisTests, for the example trajectory and the tutorial
 ```
 
-Python 3.10 or newer. Everything, including ffmpeg for MP4 export, comes from pip; nothing else to install.
+Python 3.10 or newer. Everything, ffmpeg included, comes from pip.
+
+| Command | What it does |
+|---|---|
+| `mdmovie` | open the app |
+| `mdmovie md.tpr md.xtc [more.xtc …]` | open a ready-made movie of a trajectory |
+| `mdmovie --example` | the same for the adenylate kinase example |
+| `mdmovie movie.mdmovie.json` | open a saved project |
+| `mdmovie render movie.mdmovie.json movie.mp4` | render a project without the app (`--scale`, `--fps`, `--start`, `--stop`, …) |
+| `mdmovie render md.tpr md.xtc movie.mp4` | render a ready-made movie of a trajectory without the app |
 
 ## Code map
 
 ```
-mdmovie/core/       sync model (timemap), layout tree, crop math, project file
-mdmovie/sources/    image sequences + LRU cache, trajectory metadata
+mdmovie/core/       sync model (timemap), layout tree, crop math, project file, quick start from a trajectory
+mdmovie/sources/    image sequences + LRU cache, trajectory metadata, periodic-boundary unwrapping
 mdmovie/analysis/   preset registry, built-in presets, cached runner
-mdmovie/panels/     image (+ data overlay), plot, heatmap, CV map, text
+mdmovie/mol/        molecule renderer: structure + secondary structure, cartoon mesh, software rasteriser
+mdmovie/panels/     image (+ data overlay), molecule, plot, heatmap, CV map, text
 mdmovie/render/     compositor (single drawing path for preview and export), exporter
 mdmovie/ui/         main window, canvas editor, inspector, timeline, dialogs
-docs/               tutorial + make_tutorial_images.py (regenerates every screenshot)
+docs/               tutorial + make_tutorial_images.py (regenerates every screenshot and GIF)
 ```
 
 ## Development
@@ -54,7 +118,8 @@ docs/               tutorial + make_tutorial_images.py (regenerates every screen
 ```bash
 git clone https://github.com/dmighty007/mdmovie && cd mdmovie
 pip install -e ".[dev]"
-python -m pytest              # headless
+python -m pytest                                                   # headless
+QT_QPA_PLATFORM=offscreen python docs/make_tutorial_images.py      # refresh the docs pictures
 ```
 
 ### Releasing

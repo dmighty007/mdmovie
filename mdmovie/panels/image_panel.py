@@ -7,7 +7,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter
 
-from mdmovie.panels.base import Panel, Prop, RenderContext, draw_message
+from mdmovie.panels.base import Panel, Prop, RenderContext, draw_message, only_when
 from mdmovie.panels.overlay import draw_point_and_trail, trail_props
 from mdmovie.panels.series_data import current_index, series_results, series_time_info, xy_data
 from mdmovie.sources.image_sequence import DEFAULT_NUMBER_REGEX, IMAGE_CACHE, Sequence, build_sequence, image_size
@@ -24,7 +24,8 @@ class ImagePanel(Panel):
         Prop("folder", "dir", "", "Folder or image file", section="Source"),
         Prop("pattern", "str", "*.png", "File pattern", section="Source"),
         Prop("index_from", "choice", "order", "Frame index from", ("order", "filename"), section="Timing"),
-        Prop("number_regex", "str", DEFAULT_NUMBER_REGEX, "Number regex", section="Timing"),
+        Prop("number_regex", "str", DEFAULT_NUMBER_REGEX, "Number regex", section="Timing",
+             when=(("index_from", "filename"),)),
         Prop("t0", "float", 0.0, "Time of index 0 (ps)", minimum=-1e12, maximum=1e12, section="Timing"),
         Prop("dt", "float", 1.0, "Time per index (ps)", minimum=1e-9, maximum=1e12, step=0.1, section="Timing"),
         Prop("fit", "choice", "contain", "Fit", ("contain", "cover", "stretch"), section="Display"),
@@ -32,16 +33,18 @@ class ImagePanel(Panel):
         # --- data overlay (scatter on top of e.g. a pre-rendered FES) ---
         Prop("overlay", "bool", False, "Draw data on the image", section="Data overlay"),
         Prop("calib", "rect", [0.0, 0.0, 1.0, 1.0], "Plot area in the image", hidden=True),
-        Prop("ax_xmin", "float", 0.0, "X at left edge of plot area", minimum=-1e12, maximum=1e12, step=0.1,
-             section="Data overlay"),
-        Prop("ax_xmax", "float", 1.0, "X at right edge", minimum=-1e12, maximum=1e12, step=0.1,
-             section="Data overlay"),
-        Prop("ax_ymin", "float", 0.0, "Y at bottom edge", minimum=-1e12, maximum=1e12, step=0.1,
-             section="Data overlay"),
-        Prop("ax_ymax", "float", 1.0, "Y at top edge", minimum=-1e12, maximum=1e12, step=0.1,
-             section="Data overlay"),
-        Prop("clip_overlay", "bool", True, "Clip to the plot area", section="Data overlay"),
-        *trail_props("Data overlay"),
+        *only_when([
+            Prop("ax_xmin", "float", 0.0, "X at left edge of plot area", minimum=-1e12, maximum=1e12, step=0.1,
+                 section="Data overlay"),
+            Prop("ax_xmax", "float", 1.0, "X at right edge", minimum=-1e12, maximum=1e12, step=0.1,
+                 section="Data overlay"),
+            Prop("ax_ymin", "float", 0.0, "Y at bottom edge", minimum=-1e12, maximum=1e12, step=0.1,
+                 section="Data overlay"),
+            Prop("ax_ymax", "float", 1.0, "Y at top edge", minimum=-1e12, maximum=1e12, step=0.1,
+                 section="Data overlay"),
+            Prop("clip_overlay", "bool", True, "Clip to the plot area", section="Data overlay"),
+            *trail_props("Data overlay"),
+        ], "overlay", True),
     ]
 
     def sequence(self, project) -> Sequence:

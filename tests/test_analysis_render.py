@@ -124,3 +124,36 @@ def test_user_preset_folder(u):
     assert load_user_presets([os.path.join(here, "..", "examples", "presets")]) == []
     res = run(u, "Salt bridge distance", acidic="resid 22 and name OE1 OE2", basic="resid 23 and name NZ")
     assert res.values.shape == (10, 2)
+
+
+def test_trajectory_without_frame_times_counts_frames(tmp_path):
+    """An XTC written without times reports t = 0 for every frame: plots must still advance."""
+    import MDAnalysis as mda
+    from MDAnalysisTests.datafiles import DCD, PSF
+
+    from mdmovie.analysis import runner
+    from mdmovie.core.project import Project
+    from mdmovie.panels import Series
+    u = mda.Universe(PSF, DCD)
+    ca = u.select_atoms("name CA")
+    ca.write(str(tmp_path / "ca.pdb"))
+    with mda.Writer(str(tmp_path / "ca.xtc"), ca.n_atoms) as w:
+        for ts in u.trajectory[:12]:
+            ts.time, ts.data["dt"] = 0.0, 0.0
+            w.write(ca)
+    pr = Project()
+    traj = pr.add_trajectory(str(tmp_path / "ca.pdb"), [str(tmp_path / "ca.xtc")])
+    meta = traj.meta(pr.resolve_path)
+    assert not meta.timed and meta.dt == 1.0
+    res = runner.compute(pr, Series(traj.id, "Radius of gyration", {"select": "all"}, step=2))
+    assert list(res.time) == [0, 2, 4, 6, 8, 10]
+
+
+def test_render_command_from_trajectory_files(tmp_path):
+    """`mdmovie render top traj out.gif`: the ready-made movie without the GUI."""
+    from MDAnalysisTests.datafiles import DCD, PSF
+
+    from mdmovie.app import main
+    out = tmp_path / "adk.gif"
+    assert main(["render", DCD, PSF, str(out), "--scale", "0.1", "--stop", "3"]) == 0
+    assert out.stat().st_size > 0

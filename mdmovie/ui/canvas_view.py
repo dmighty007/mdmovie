@@ -33,7 +33,8 @@ class WelcomeCard(QFrame):
         logo.setPixmap(icons.pixmap("film", icons._colors["accent"], 34))
         title = QLabel("Start a new movie")
         title.setObjectName("welcomeTitle")
-        sub = QLabel("Arrange rendered protein frames next to live analysis plots, then export an MP4.")
+        sub = QLabel("Arrange a molecule (rendered frames, or drawn here from the trajectory) next to live "
+                     "analysis plots, then export an MP4.")
         sub.setObjectName("note")
         sub.setWordWrap(True)
         lay.addWidget(logo)
@@ -41,16 +42,18 @@ class WelcomeCard(QFrame):
         lay.addWidget(sub)
         lay.addSpacing(8)
         for icon_name, text, cb in (
+                ("molecule", "Start from a trajectory…", lambda: win.start_from_trajectory()),
+                ("image", "Start from rendered images", lambda: win.new_panel("image")),
                 ("sparkle", "Open the demo project", win.open_demo),
-                ("image", "Add protein frames (image sequence)", lambda: win.new_panel("image")),
-                ("trajectory", "Load a trajectory", win.load_trajectory),
                 ("open", "Open a saved project…", lambda: win.open_project())):
-            b = QPushButton(icons.icon(icon_name, "accent" if icon_name == "sparkle" else "normal"), "  " + text)
+            b = QPushButton(icons.icon(icon_name, "accent" if icon_name == "molecule" else "normal"), "  " + text)
             b.setObjectName("welcomeButton")
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.clicked.connect(cb)
             lay.addWidget(b)
-        tip = QLabel("Tip: right-click the canvas for layout options.")
+        tip = QLabel("A trajectory gives the molecule with RMSD and Rg plots and a time label, ready to "
+                     "change. Or drop topology + trajectory files here.")
+        tip.setWordWrap(True)
         tip.setObjectName("note")
         lay.addSpacing(6)
         lay.addWidget(tip)
@@ -111,6 +114,8 @@ class CanvasView(QWidget):
     def resizeEvent(self, e):
         self.update_welcome()
         self.request_render()
+        if hasattr(self.win, "status_info"):
+            self.win.update_status()
 
     # --- geometry -------------------------------------------------------------------------
     def display_rect(self) -> QRectF:
@@ -269,6 +274,13 @@ class CanvasView(QWidget):
             self._drag = (hit[0], i, pr.to_dict(), self._to_canvas(e.position()), (ov.x, ov.y, ov.w, ov.h))
         elif hit[0] == "cell":
             _, path, pid = hit
+            if self._is_molecule(pid) and self.win.selection == ("panel", pid):
+                # already selected: dragging turns the molecule (Shift: moves it)
+                props = pr.panels[pid].props
+                shift = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                self._drag = ("mol-pan" if shift else "mol-rotate", pid, pr.to_dict(), e.position(),
+                              (list(props["rotation"]), list(props["pan"])))
+                return
             self.win.select(("panel", pid) if pid in pr.panels else ("cell", path))
 
     def mouseMoveEvent(self, e):
@@ -285,12 +297,26 @@ class CanvasView(QWidget):
                 self.setCursor(QCursor(Qt.CursorShape.SizeFDiagCursor))
             elif hit and hit[0] == "overlay":
                 self.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
+            elif hit and hit[0] == "cell" and self._is_molecule(hit[2]) and self.win.selection == ("panel", hit[2]):
+                self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
             else:
                 self.unsetCursor()
             self.update()
             return
         kind = self._drag[0]
-        if kind == "divider":
+        if kind in ("mol-rotate", "mol-pan"):
+            _, pid, _, start, (rotation, pan) = self._drag
+            panel = pr.panels.get(pid)
+            if panel is None:
+                return
+            dx, dy = pos.x() - start.x(), pos.y() - start.y()
+            if kind == "mol-rotate":
+                from mdmovie.mol.render import rotated
+                panel.props["rotation"] = rotated(rotation, dx * 0.01, dy * 0.01)
+            else:
+                per_px = self._molecule_angstrom_per_px(pid)
+                panel.props["pan"] = [round(pan[0] + dx * per_px, 4), round(pan[1] - dy * per_px, 4)]
+        elif kind == "divider":
             path, i, srect, orient, _ = self._drag[1]
             v = self._widget_to_layout(pos.x() if orient == "h" else pos.y(), orient == "h")
             L.set_divider(pr.layout, path, i, v, srect)
@@ -311,12 +337,12 @@ class CanvasView(QWidget):
     def mouseReleaseEvent(self, e):
         if self._drag is None:
             return
-        before = self._drag[2]
+        kind, before = self._drag[0], self._drag[2]
         self._drag = None
         after = self.win.project.to_dict()
         if after != before:
-            self.win.push_snapshot("Move divider" if "layout" in before and before["layout"] != after["layout"]
-                                   else "Move overlay", before, after)
+            names = {"mol-rotate": "Rotate view", "mol-pan": "Move view", "divider": "Move divider"}
+            self.win.push_snapshot(names.get(kind, "Move overlay"), before, after)
 
     def mouseDoubleClickEvent(self, e):
         hit = self._hit(e.position())
@@ -328,6 +354,36 @@ class CanvasView(QWidget):
         panel = self.win.project.panels.get(pid) if pid else None
         if panel is not None and panel.KIND == "image":
             self.win.crop_panel(pid)
+        elif panel is not None and panel.KIND == "molecule" and panel.trajectory(self.win.project) is None:
+            self.win.set_molecule_trajectory(pid, "__new__")
+
+    # --- molecule panels ------------------------------------------------------------------
+    def _is_molecule(self, pid) -> bool:
+        panel = self.win.project.panels.get(pid) if pid else None
+        return panel is not None and panel.KIND == "molecule"
+
+    def _molecule_angstrom_per_px(self, pid) -> float:
+        """How far one preview pixel is in the molecule (for Shift-drag)."""
+        pr = self.win.project
+        panel = pr.panels[pid]
+        rect = next((r for _, p, r in self.cells() if p == pid), None)
+        try:
+            radius = panel.scene(pr).radius
+        except Exception:
+            return 0.1
+        size = min(rect.width(), rect.height()) if rect is not None else 300
+        return radius / (max(panel.props["zoom"], 1e-3) * 0.46 * max(size, 1))
+
+    def wheelEvent(self, e):
+        hit = self._hit(e.position())
+        if not (hit and hit[0] == "cell" and self._is_molecule(hit[2]) and self.win.selection == ("panel", hit[2])):
+            return super().wheelEvent(e)
+        pid = hit[2]
+        factor = 1.0015 ** e.angleDelta().y()
+        self.win.apply("Zoom view", lambda p: p.panels[pid].props.__setitem__(
+            "zoom", round(min(max(p.panels[pid].props["zoom"] * factor, 0.05), 50.0), 4)),
+            merge=f"{pid}.zoom", structural=False)
+        e.accept()
 
     def leaveEvent(self, e):
         self._hover_div = None

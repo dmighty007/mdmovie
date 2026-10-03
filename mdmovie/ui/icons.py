@@ -49,13 +49,15 @@ PATHS = {
     "film": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>',
     "cvmap": '<path d="M4 4v16h16"/><circle cx="9" cy="13" r="1.3"/><circle cx="13" cy="9" r="1.3"/>'
              '<circle cx="16" cy="14" r="1.3"/><path d="M7 17c3-1 4-6 9-9" stroke-dasharray="2 2.2"/>',
+    "molecule": '<circle cx="6" cy="17" r="2.6"/><circle cx="12" cy="7" r="3.2"/><circle cx="18.5" cy="16" r="2.2"/>'
+                '<path d="m7.4 14.8 2.9-5M14.5 9.3l2.9 4.8"/>',
     "lock": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     "unlock": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
     "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2'
            'M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
 }
 
-KIND_ICONS = {"image": "image", "plot": "plot", "heatmap": "heatmap", "cvmap": "cvmap", "text": "text"}
+KIND_ICONS = {"image": "image", "molecule": "molecule", "plot": "plot", "heatmap": "heatmap", "cvmap": "cvmap", "text": "text"}
 
 _colors = {"normal": "#e4e7ec", "muted": "#939cab", "disabled": "#5d6573", "accent": "#ff7a1a",
            "on_accent": "#1b1204"}
